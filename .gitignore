@@ -1,0 +1,7 @@
+CLAUDE.md
+docs/
+.pytest_cache/
+__pycache__/
+.ruff_cache/
+.claude/
+.venv/
