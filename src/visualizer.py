@@ -530,21 +530,40 @@ def _build_networkx_graph(tree: dict, *, collapse_leaves: bool = True) -> nx.DiG
                 )
                 G.add_edge(node_id, cluster_id, weight=1.0, dashes=True)
 
-                for i, leaf in enumerate(leaf_children):
-                    ltype = leaf.get("type", "text")
-                    lpage = leaf.get("page_idx", 0)
-                    ltext = leaf.get("text", "")
+                # Group leaves by type; each type gets one intermediate node
+                type_buckets: dict[str, list[dict]] = {}
+                for leaf in leaf_children:
+                    t = leaf.get("type", "text")
+                    type_buckets.setdefault(t, []).append(leaf)
+
+                for ltype, bucket in sorted(type_buckets.items()):
                     icon = CONTENT_TYPE_ICONS.get(ltype, "?")
-                    leaf_id = f"leaf_{cluster_id}_{i}"
+                    bp = sorted({c.get("page_idx", 0) for c in bucket})
+                    bp_range = f"p.{bp[0]}" if len(bp) == 1 else f"p.{bp[0]}–{bp[-1]}"
+                    group_id = f"typegroup_{cluster_id}_{ltype}"
                     G.add_node(
-                        leaf_id,
-                        label=f"[{icon}] {ltext[:25]}  p.{lpage}",
-                        title=f"type: {ltype}\n{ltext[:80]}\np.{lpage}\nbbox: {leaf.get('bbox')}",
+                        group_id,
+                        label=f"[{icon}] {len(bucket)} {ltype}  {bp_range}",
+                        title=f"type group: {ltype}\ncount: {len(bucket)}\n{bp_range}",
                         color=CONTENT_TYPE_COLORS.get(ltype, DEFAULT_COLOR),
-                        size=6,
+                        size=8,
                         shape="square",
                     )
-                    G.add_edge(cluster_id, leaf_id, weight=0.5, dashes=True)
+                    G.add_edge(cluster_id, group_id, weight=0.6, dashes=True)
+
+                    for i, leaf in enumerate(bucket):
+                        lpage = leaf.get("page_idx", 0)
+                        ltext = leaf.get("text", "")
+                        leaf_id = f"leaf_{group_id}_{i}"
+                        G.add_node(
+                            leaf_id,
+                            label=f"[{icon}] {ltext[:20]}  p.{lpage}",
+                            title=f"type: {ltype}\n{ltext[:80]}\np.{lpage}\nbbox: {leaf.get('bbox')}",
+                            color=CONTENT_TYPE_COLORS.get(ltype, DEFAULT_COLOR),
+                            size=5,
+                            shape="square",
+                        )
+                        G.add_edge(group_id, leaf_id, weight=0.4, dashes=True)
         else:
             for child in children:
                 _walk(child, parent_id=node_id)
@@ -598,7 +617,7 @@ _D3_TREE_TEMPLATE: str = """\
     svg { width: 100vw; height: 100vh; cursor: grab; }
     svg:active { cursor: grabbing; }
     .node circle { cursor: pointer; stroke-width: 2px; }
-    .node text { font: 11px monospace; fill: #ccc; pointer-events: none; user-select: none; }
+    .node text { font: 10px monospace; fill: #ccc; pointer-events: none; user-select: none; text-anchor: middle; }
     .link { fill: none; stroke: #555; stroke-opacity: .6; stroke-width: 1.5px; }
     #tt {
       position: fixed; background: rgba(0,0,0,.85); color: #eee;
@@ -633,7 +652,7 @@ _D3_TREE_TEMPLATE: str = """\
   const tt = d3.select("#tt");
   svg.on("mousemove", e =>
     tt.style("left", (e.clientX + 14) + "px").style("top", (e.clientY - 14) + "px"));
-  const treeLayout = d3.tree().nodeSize([60, 160]);
+  const treeLayout = d3.tree().nodeSize([80, 180]);
   let root = d3.hierarchy(DATA);
   root.x0 = 0; root.y0 = 0;
   root.descendants().forEach(d => {
@@ -655,8 +674,10 @@ _D3_TREE_TEMPLATE: str = """\
       .on("mouseover", (e, d) => tt.style("display", "block").text(d.data.tooltip ?? ""))
       .on("mouseout", () => tt.style("display", "none"));
     enter.append("circle").attr("r", 0).attr("stroke", d => d.data.color);
-    enter.append("text").attr("dy", "0.35em")
-      .attr("x", d => (d.data.r ?? 6) + 8).text(d => d.data.name);
+    enter.append("text")
+      .attr("dy", d => (d.data.r ?? 6) + 14)
+      .attr("x", 0)
+      .text(d => { const n = d.data.name; return n.length > 22 ? n.slice(0, 22) + "…" : n; });
     const merged = enter.merge(node);
     merged.transition().duration(300)
       .attr("transform", d => `translate(${d.x},${d.y})`);

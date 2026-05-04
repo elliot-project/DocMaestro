@@ -308,6 +308,24 @@ class TestDomGraphViz:
         assert len(leaf_nodes) >= 1
         assert all("p." in d.get("label", "") for d in leaf_nodes)
 
+    def test_type_groups_between_cluster_and_leaves(self):
+        tree = build_doc_tree(self._make_items(), "test_doc")
+        G = _build_networkx_graph(tree, collapse_leaves=True)
+        typegroup_nodes = [n for n in G.nodes if str(n).startswith("typegroup_")]
+        assert len(typegroup_nodes) >= 1
+        for tg_id in typegroup_nodes:
+            assert G.out_degree(tg_id) > 0, f"{tg_id} has no leaf children"
+
+    def test_cluster_children_are_type_groups_not_leaves(self):
+        tree = build_doc_tree(self._make_items(), "test_doc")
+        G = _build_networkx_graph(tree, collapse_leaves=True)
+        cluster_nodes = [n for n in G.nodes if str(n).startswith("leaf_cluster_")]
+        for cluster_id in cluster_nodes:
+            children = list(G.successors(cluster_id))
+            assert all(str(c).startswith("typegroup_") for c in children), (
+                f"cluster {cluster_id} has non-typegroup children: {children}"
+            )
+
     def test_output_html_saved(self, tmp_path):
         out = tmp_path / "test_dom.html"
         draw_dom_graph_viz(self._make_items(), "test_doc", out)
