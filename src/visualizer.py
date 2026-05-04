@@ -400,6 +400,30 @@ def _all_descendant_leaf_counts(node: dict) -> dict[str, int]:
     return counts
 
 
+def _compute_page_ranges(node: dict) -> tuple[int, int]:
+    """Attach _page_min/_page_max to every node in the tree (mutates in place).
+
+    Computes the minimum and maximum page_idx across the node itself and all
+    its descendants, then stores the result as _page_min/_page_max on the node.
+    Called once before _build_networkx_graph walks the tree.
+
+    Args:
+        node: Any node in the document tree dict.
+
+    Returns:
+        Tuple of (min_page, max_page) for this subtree.
+    """
+    own = node.get("page_idx") or 0
+    mn = mx = own
+    for child in node.get("children", []):
+        cmin, cmax = _compute_page_ranges(child)
+        mn = min(mn, cmin)
+        mx = max(mx, cmax)
+    node["_page_min"] = mn
+    node["_page_max"] = mx
+    return mn, mx
+
+
 def _build_networkx_graph(tree: dict, *, collapse_leaves: bool = True) -> nx.DiGraph:
     """Build a directed NetworkX graph from the document tree.
 
@@ -416,12 +440,19 @@ def _build_networkx_graph(tree: dict, *, collapse_leaves: bool = True) -> nx.DiG
         Directed graph where each node carries: label, title (tooltip),
         color, size, shape attributes.
     """
+    _compute_page_ranges(tree)
+
     G: nx.DiGraph = nx.DiGraph()
     _counter: list[int] = [0]
 
     def _next_id() -> str:
         _counter[0] += 1
         return f"n{_counter[0]}"
+
+    def _page_range_str(node: dict) -> str:
+        mn = node.get("_page_min", node.get("page_idx", 0)) or 0
+        mx = node.get("_page_max", node.get("page_idx", 0)) or 0
+        return f"p.{mn}" if mn == mx else f"p.{mn}–{mx}"
 
     def _walk(node: dict, parent_id: str | None) -> None:
         ntype = node.get("type", "text")
@@ -431,6 +462,7 @@ def _build_networkx_graph(tree: dict, *, collapse_leaves: bool = True) -> nx.DiG
         page_idx = node.get("page_idx", 0)
         bbox = node.get("bbox")
         children = node.get("children", [])
+        page_range = _page_range_str(node)
 
         desc_counts = _all_descendant_leaf_counts(node)
         total_desc = sum(desc_counts.values())
@@ -444,14 +476,14 @@ def _build_networkx_graph(tree: dict, *, collapse_leaves: bool = True) -> nx.DiG
             size = 30
             tooltip = f"type: document\n{text}\n{counts_str}"
         elif ntype == "title":
-            label = f"[H{level}] {text[:30]}"
+            label = f"[H{level}] {text[:25]}  {page_range}"
             shape = "dot"
             color = CONTENT_TYPE_COLORS["title"]
             size = min(50, int(10 + 3 * math.sqrt(max(total_desc, 1))))
-            tooltip = f"type: h{level}\n{text[:80]}\np.{page_idx}\n{bbox_str}\n{counts_str}"
+            tooltip = f"type: h{level}\n{text[:80]}\n{page_range}\n{bbox_str}\n{counts_str}"
         else:
             icon = CONTENT_TYPE_ICONS.get(ntype, "?")
-            label = f"[{icon}] {text[:30]}"
+            label = f"[{icon}] {text[:25]}  p.{page_idx}"
             shape = "square"
             color = CONTENT_TYPE_COLORS.get(ntype, DEFAULT_COLOR)
             size = 8
@@ -479,16 +511,40 @@ def _build_networkx_graph(tree: dict, *, collapse_leaves: bool = True) -> nx.DiG
                     t = c.get("type", "text")
                     leaf_counts[t] = leaf_counts.get(t, 0) + 1
                 summary = " · ".join(f"{v} {k}" for k, v in sorted(leaf_counts.items()))
+
+                leaf_pages = sorted({c.get("page_idx", 0) for c in leaf_children})
+                lp = (
+                    f"p.{leaf_pages[0]}"
+                    if len(leaf_pages) == 1
+                    else f"p.{leaf_pages[0]}–{leaf_pages[-1]}"
+                )
+
                 cluster_id = f"leaf_cluster_{node_id}"
                 G.add_node(
                     cluster_id,
-                    label=summary,
-                    title=f"leaf cluster\n{summary}\np.{page_idx}",
+                    label=f"{summary}  {lp}",
+                    title=f"leaf cluster\n{summary}\n{lp}",
                     color="#B0BEC5",
-                    size=8,
+                    size=10,
                     shape="square",
                 )
                 G.add_edge(node_id, cluster_id, weight=1.0, dashes=True)
+
+                for i, leaf in enumerate(leaf_children):
+                    ltype = leaf.get("type", "text")
+                    lpage = leaf.get("page_idx", 0)
+                    ltext = leaf.get("text", "")
+                    icon = CONTENT_TYPE_ICONS.get(ltype, "?")
+                    leaf_id = f"leaf_{cluster_id}_{i}"
+                    G.add_node(
+                        leaf_id,
+                        label=f"[{icon}] {ltext[:25]}  p.{lpage}",
+                        title=f"type: {ltype}\n{ltext[:80]}\np.{lpage}\nbbox: {leaf.get('bbox')}",
+                        color=CONTENT_TYPE_COLORS.get(ltype, DEFAULT_COLOR),
+                        size=6,
+                        shape="square",
+                    )
+                    G.add_edge(cluster_id, leaf_id, weight=0.5, dashes=True)
         else:
             for child in children:
                 _walk(child, parent_id=node_id)

@@ -262,6 +262,52 @@ class TestDomGraphViz:
         G = _build_networkx_graph(tree, collapse_leaves=True)
         assert list(G.nodes) == ["root"]
 
+    def test_leaf_cluster_has_leaf_children(self):
+        tree = build_doc_tree(self._make_items(), "test_doc")
+        G = _build_networkx_graph(tree, collapse_leaves=True)
+        cluster_nodes = [n for n in G.nodes if str(n).startswith("leaf_cluster_")]
+        assert len(cluster_nodes) >= 1
+        for cluster_id in cluster_nodes:
+            assert G.out_degree(cluster_id) > 0, f"{cluster_id} has no children"
+
+    def test_leaf_cluster_label_shows_page_range(self):
+        # Chapter 1 has leaves on page 0 and 1 (body on p0, section continues p1)
+        items = [
+            {"type": "text", "text": "Ch1", "text_level": 1, "page_idx": 0, "bbox": []},
+            {"type": "text", "text": "para a", "page_idx": 0, "bbox": []},
+            {"type": "text", "text": "para b", "page_idx": 1, "bbox": []},
+        ]
+        tree = build_doc_tree(items, "doc")
+        G = _build_networkx_graph(tree, collapse_leaves=True)
+        cluster_labels = [
+            d.get("label", "") for n, d in G.nodes(data=True) if str(n).startswith("leaf_cluster_")
+        ]
+        assert any("–" in lbl or "p." in lbl for lbl in cluster_labels)
+
+    def test_title_label_shows_page_range(self):
+        items = [
+            {"type": "text", "text": "Long Ch", "text_level": 1, "page_idx": 0, "bbox": []},
+            {"type": "text", "text": "para a", "page_idx": 0, "bbox": []},
+            {"type": "text", "text": "para b", "page_idx": 3, "bbox": []},
+        ]
+        tree = build_doc_tree(items, "doc")
+        G = _build_networkx_graph(tree, collapse_leaves=True)
+        title_labels = [
+            d.get("label", "") for _, d in G.nodes(data=True) if "[H" in d.get("label", "")
+        ]
+        assert any("–" in lbl for lbl in title_labels)
+
+    def test_individual_leaf_label_has_page(self):
+        tree = build_doc_tree(self._make_items(), "test_doc")
+        G = _build_networkx_graph(tree, collapse_leaves=True)
+        leaf_nodes = [
+            d
+            for n, d in G.nodes(data=True)
+            if str(n).startswith("leaf_") and not str(n).startswith("leaf_cluster_")
+        ]
+        assert len(leaf_nodes) >= 1
+        assert all("p." in d.get("label", "") for d in leaf_nodes)
+
     def test_output_html_saved(self, tmp_path):
         out = tmp_path / "test_dom.html"
         draw_dom_graph_viz(self._make_items(), "test_doc", out)
