@@ -752,11 +752,14 @@ def generate_all_visualizations(
     doc_name: str,
     output_dir: Path,
     pages: list[int] | None = None,
+    *,
+    dom: bool = False,
 ) -> list[Path]:
     """Generate all three visualization types for the given document.
 
     Produces layout-bbox PNGs and reading-order PNGs per page, plus one
-    document-tree PNG for the full document.
+    document-tree PNG for the full document. Optionally generates interactive
+    DOM graph HTML files via PyVis when `dom=True`.
 
     Args:
         pdf_path: Path to the source PDF.
@@ -765,9 +768,11 @@ def generate_all_visualizations(
         output_dir: Root output directory (files go under output_dir/plots/).
         pages: List of zero-based page indices to visualize. If None, uses
             the first 3 pages that have content.
+        dom: When True, also generate interactive DOM graph HTML files
+            (full-document + one per requested page).
 
     Returns:
-        List of Paths to all saved PNG files.
+        List of Paths to all saved files (PNGs and optionally HTMLs).
     """
     plots_dir = output_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
@@ -793,5 +798,16 @@ def generate_all_visualizations(
     draw_doc_tree_viz(content_list, doc_name, tree_path)
     print(f"  saved: {tree_path.name}")
     saved.append(tree_path)
+
+    if dom:
+        full_dom_path = plots_dir / f"{doc_name}_dom_full.html"
+        draw_dom_graph_viz(content_list, doc_name, full_dom_path)
+        print(f"  saved: {full_dom_path.name}")
+        saved.append(full_dom_path)
+        for page_idx in pages:
+            page_dom_path = plots_dir / f"{doc_name}_page{page_idx:03d}_dom.html"
+            draw_dom_graph_viz(content_list, doc_name, page_dom_path, page_idx=page_idx)
+            print(f"  saved: {page_dom_path.name}")
+            saved.append(page_dom_path)
 
     return saved

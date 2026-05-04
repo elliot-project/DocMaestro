@@ -69,6 +69,10 @@ def main() -> None:
         "--output-dir", type=Path, default=Path("output"),
         help="Root directory for visualization outputs. Default: output/.",
     )
+    parser.add_argument(
+        "--dom", action="store_true", default=False,
+        help="Also generate interactive DOM graph HTML files (full-doc + per page).",
+    )
     args = parser.parse_args()
 
     if not args.pdf.exists():
@@ -94,6 +98,7 @@ def main() -> None:
         doc_name=doc_name,
         output_dir=args.output_dir,
         pages=args.pages,
+        dom=args.dom,
     )
 
     print(f"\nDone. {len(saved)} files saved to {args.output_dir / 'plots'}/")
