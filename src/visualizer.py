@@ -1,5 +1,7 @@
 """Document visualization: layout bboxes, reading order, and document tree."""
 
+import html as _html
+import json
 import math
 
 import matplotlib
@@ -495,54 +497,150 @@ def _build_networkx_graph(tree: dict, *, collapse_leaves: bool = True) -> nx.DiG
     return G
 
 
-def _nx_to_pyvis(G: nx.DiGraph, output_path: Path) -> None:
-    """Render a NetworkX directed graph to a self-contained PyVis HTML file.
+def _nx_to_d3_json(G: nx.DiGraph) -> dict:
+    """Convert a NetworkX directed graph to a nested D3 hierarchy dict.
 
-    Uses force_atlas_2based physics so title clusters naturally group by
-    section proximity while leaf summary nodes orbit their parent titles.
+    Walks the graph DFS from node "root", mapping _build_networkx_graph sizes (8–50)
+    to D3 circle radii (6–20) via scaled clamping: r = clamp(int(size * 0.55), 6, 20).
 
     Args:
-        G: Directed graph with node attributes: label, title, color, size, shape.
-        output_path: Destination .html file path (created if missing).
+        G: Directed graph from _build_networkx_graph() containing a node
+            whose id is the string "root".
+
+    Returns:
+        Nested dict with keys id, name, color, tooltip, r, and optionally
+        children (list of same structure, absent on leaves).
     """
-    from pyvis.network import Network  # deferred: large optional dep
 
-    net = Network(
-        directed=True,
-        height="900px",
-        width="100%",
-        bgcolor="#1a1a2e",
-        font_color="white",
-        notebook=False,
-    )
+    def _build(node_id: str) -> dict:
+        attrs = G.nodes[node_id]
+        r = max(6, min(20, int(attrs.get("size", 8) * 0.55)))
+        d: dict = {
+            "id": node_id,
+            "name": attrs.get("label", node_id),
+            "color": attrs.get("color", DEFAULT_COLOR),
+            "tooltip": attrs.get("title", ""),
+            "r": r,
+        }
+        children = [_build(c) for c in G.successors(node_id)]
+        if children:
+            d["children"] = children
+        return d
 
-    for node_id, attrs in G.nodes(data=True):
-        net.add_node(
-            str(node_id),
-            label=attrs.get("label", str(node_id)),
-            title=attrs.get("title", ""),
-            color=attrs.get("color", DEFAULT_COLOR),
-            size=attrs.get("size", 10),
-            shape=attrs.get("shape", "dot"),
-        )
+    return _build("root")
 
-    for src, dst, attrs in G.edges(data=True):
-        edge_kwargs: dict = {"width": attrs.get("weight", 1.0)}
-        if attrs.get("dashes"):
-            edge_kwargs["dashes"] = True
-        net.add_edge(str(src), str(dst), **edge_kwargs)
 
-    net.set_options("""{
-      "physics": {
-        "forceAtlas2Based": {
-          "gravitationalConstant": -50,
-          "springLength": 120
-        },
-        "solver": "forceAtlas2Based"
-      }
-    }""")
+_D3_TREE_TEMPLATE: str = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>__TITLE__ — DOM Tree</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1a1a2e; overflow: hidden; }
+    svg { width: 100vw; height: 100vh; cursor: grab; }
+    svg:active { cursor: grabbing; }
+    .node circle { cursor: pointer; stroke-width: 2px; }
+    .node text { font: 11px monospace; fill: #ccc; pointer-events: none; user-select: none; }
+    .link { fill: none; stroke: #555; stroke-opacity: .6; stroke-width: 1.5px; }
+    #tt {
+      position: fixed; background: rgba(0,0,0,.85); color: #eee;
+      padding: 8px 10px; border-radius: 4px; font: 11px monospace;
+      white-space: pre; pointer-events: none; display: none;
+      z-index: 10; border: 1px solid #444; max-width: 320px;
+    }
+    #rb {
+      position: fixed; top: 12px; right: 12px; background: #2a2a4e;
+      color: #ccc; border: 1px solid #555; border-radius: 4px;
+      padding: 6px 12px; cursor: pointer; font: 12px monospace; z-index: 10;
+    }
+    #rb:hover { background: #3a3a6e; }
+  </style>
+</head>
+<body>
+  <div id="tt"></div>
+  <button id="rb">Reset view</button>
+  <svg id="tree"></svg>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+  const DATA = __DATA__;
+  const W = window.innerWidth, MT = 60;
+  const svg = d3.select("#tree");
+  const g = svg.append("g");
+  const initT = d3.zoomIdentity.translate(W / 2, MT);
+  const zoom = d3.zoom().scaleExtent([.05, 4])
+    .on("zoom", e => g.attr("transform", e.transform));
+  svg.call(zoom).call(zoom.transform, initT);
+  document.getElementById("rb").onclick = () =>
+    svg.transition().duration(400).call(zoom.transform, initT);
+  const tt = d3.select("#tt");
+  svg.on("mousemove", e =>
+    tt.style("left", (e.clientX + 14) + "px").style("top", (e.clientY - 14) + "px"));
+  const treeLayout = d3.tree().nodeSize([60, 160]);
+  let root = d3.hierarchy(DATA);
+  root.x0 = 0; root.y0 = 0;
+  root.descendants().forEach(d => {
+    if (d.depth > 1 && d.children) { d._children = d.children; d.children = null; }
+  });
+  const diag = d3.linkVertical().x(d => d.x).y(d => d.y);
+  let uid = 0;
+  function update(src) {
+    treeLayout(root);
+    const nodes = root.descendants(), links = root.links();
+    const node = g.selectAll("g.node").data(nodes, d => d.uid ?? (d.uid = ++uid));
+    const enter = node.enter().append("g").attr("class", "node")
+      .attr("transform", `translate(${src.x0 ?? 0},${src.y0 ?? 0})`)
+      .on("click", (e, d) => {
+        if (d.children) { d._children = d.children; d.children = null; }
+        else { d.children = d._children; d._children = null; }
+        update(d);
+      })
+      .on("mouseover", (e, d) => tt.style("display", "block").text(d.data.tooltip ?? ""))
+      .on("mouseout", () => tt.style("display", "none"));
+    enter.append("circle").attr("r", 0).attr("stroke", d => d.data.color);
+    enter.append("text").attr("dy", "0.35em")
+      .attr("x", d => (d.data.r ?? 6) + 8).text(d => d.data.name);
+    const merged = enter.merge(node);
+    merged.transition().duration(300)
+      .attr("transform", d => `translate(${d.x},${d.y})`);
+    merged.select("circle").transition().duration(300)
+      .attr("r", d => d.data.r ?? 6)
+      .attr("fill", d => (d._children || d.children) ? d.data.color : "#fff")
+      .attr("stroke", d => d.data.color).attr("stroke-width", 2);
+    node.exit().transition().duration(300)
+      .attr("transform", `translate(${src.x ?? 0},${src.y ?? 0})`).remove();
+    const link = g.selectAll("path.link").data(links, d => d.target.uid);
+    const lo = { source: { x: src.x0 ?? 0, y: src.y0 ?? 0 },
+                 target: { x: src.x0 ?? 0, y: src.y0 ?? 0 } };
+    link.enter().insert("path", "g").attr("class", "link").attr("d", diag(lo))
+      .merge(link).transition().duration(300).attr("d", diag);
+    link.exit().transition().duration(300)
+      .attr("d", diag({ source: { x: src.x ?? 0, y: src.y ?? 0 },
+                        target: { x: src.x ?? 0, y: src.y ?? 0 } })).remove();
+    nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+  }
+  update(root);
+  </script>
+</body>
+</html>"""
 
-    net.write_html(str(output_path))
+
+def _write_d3_tree_html(tree_json: dict, output_path: Path) -> None:
+    """Write a self-contained D3 v7 collapsible-tree HTML file.
+
+    Nodes beyond depth 1 start collapsed; click to expand/collapse.
+    Pan and zoom via mouse drag/scroll. Loaded from d3js.org CDN.
+
+    Args:
+        tree_json: Nested hierarchy dict from _nx_to_d3_json().
+        output_path: Destination .html path (parent dir must already exist).
+    """
+    data_js = json.dumps(tree_json, ensure_ascii=False, separators=(",", ":"))
+    data_js = data_js.replace("</", "<\\/")
+    title_safe = _html.escape(tree_json.get("name", "Document"))
+    html = _D3_TREE_TEMPLATE.replace("__TITLE__", title_safe).replace("__DATA__", data_js)
+    output_path.write_text(html, encoding="utf-8")
 
 
 def draw_dom_graph_viz(
@@ -553,7 +651,7 @@ def draw_dom_graph_viz(
     page_idx: int | None = None,
     max_nodes: int = 500,
 ) -> None:
-    """Render the document DOM as an interactive directed graph saved as HTML.
+    """Render the document DOM as an interactive D3 collapsible tree saved as HTML.
 
     Full-document mode (page_idx=None): title nodes shown individually,
     direct leaf children collapsed into one summary node per section to keep
@@ -577,7 +675,8 @@ def draw_dom_graph_viz(
     tree = build_doc_tree(items, doc_name)
     G = _build_networkx_graph(tree, collapse_leaves=(page_idx is None))
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    _nx_to_pyvis(G, output_path)
+    tree_json = _nx_to_d3_json(G)
+    _write_d3_tree_html(tree_json, output_path)
 
 
 def _flatten_tree_for_render(
@@ -759,7 +858,7 @@ def generate_all_visualizations(
 
     Produces layout-bbox PNGs and reading-order PNGs per page, plus one
     document-tree PNG for the full document. Optionally generates interactive
-    DOM graph HTML files via PyVis when `dom=True`.
+    DOM graph HTML files via D3 when `dom=True`.
 
     Args:
         pdf_path: Path to the source PDF.

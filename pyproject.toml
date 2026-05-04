@@ -9,7 +9,6 @@ dependencies = [
     "matplotlib>=3.9.0",
     "ruff>=0.15.12",
     "pytest>=9.0.3",
-    "pyvis>=0.3.2",
     "networkx>=3.4.2",
 ]
 

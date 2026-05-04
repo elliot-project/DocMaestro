@@ -191,8 +191,7 @@ class TestFlattenTreeForRender:
 
     def test_max_items_truncates(self):
         items = [
-            {"type": "text", "text": f"H{i}", "text_level": 1, "page_idx": i}
-            for i in range(20)
+            {"type": "text", "text": f"H{i}", "text_level": 1, "page_idx": i} for i in range(20)
         ]
         tree = build_doc_tree(items)
         rows = _flatten_tree_for_render(tree, max_items=5)
@@ -202,10 +201,22 @@ class TestFlattenTreeForRender:
 class TestDomGraphViz:
     def _make_items(self) -> list[dict]:
         return [
-            {"type": "text", "text": "Chapter 1", "text_level": 1, "page_idx": 0, "bbox": [10, 10, 500, 50]},
+            {
+                "type": "text",
+                "text": "Chapter 1",
+                "text_level": 1,
+                "page_idx": 0,
+                "bbox": [10, 10, 500, 50],
+            },
             {"type": "text", "text": "Body paragraph", "page_idx": 0, "bbox": [10, 60, 500, 100]},
             {"type": "image", "text": "", "page_idx": 0, "bbox": [10, 110, 500, 300]},
-            {"type": "text", "text": "Chapter 2", "text_level": 1, "page_idx": 1, "bbox": [10, 10, 500, 50]},
+            {
+                "type": "text",
+                "text": "Chapter 2",
+                "text_level": 1,
+                "page_idx": 1,
+                "bbox": [10, 10, 500, 50],
+            },
             {"type": "text", "text": "More text", "page_idx": 1, "bbox": [10, 60, 500, 100]},
         ]
 
@@ -242,9 +253,7 @@ class TestDomGraphViz:
         tree = build_doc_tree(self._make_items(), "test_doc")
         G = _build_networkx_graph(tree, collapse_leaves=True)
         title_tooltips = [
-            d.get("title", "")
-            for _, d in G.nodes(data=True)
-            if "[H" in d.get("label", "")
+            d.get("title", "") for _, d in G.nodes(data=True) if "[H" in d.get("label", "")
         ]
         assert all("p." in t for t in title_tooltips)
 
@@ -258,3 +267,6 @@ class TestDomGraphViz:
         draw_dom_graph_viz(self._make_items(), "test_doc", out)
         assert out.exists()
         assert out.stat().st_size > 0
+        html_text = out.read_text(encoding="utf-8")
+        assert "d3.hierarchy" in html_text
+        assert '"children":' in html_text
