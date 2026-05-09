@@ -1,8 +1,8 @@
 """CLI: generate layout-bbox, reading-order, and document-tree visualizations.
 
 Usage:
-    uv run scripts/visualize.py --pdf docs/macdonals.pdf
-    uv run scripts/visualize.py --pdf docs/macdonals.pdf --backend pipeline --pages 0 1 2 5
+    uv run scripts/visualize.py --pdf data/pdfs/macdonals.pdf
+    uv run scripts/visualize.py --pdf data/pdfs/macdonals.pdf --backend pipeline --pages 0 1 2 5
 """
 
 import argparse
@@ -50,27 +50,40 @@ def main() -> None:
         description="Generate layout-bbox, reading-order, and document-tree visualizations."
     )
     parser.add_argument(
-        "--pdf", type=Path, required=True,
+        "--pdf",
+        type=Path,
+        required=True,
         help="Path to the source PDF (must have been extracted already).",
     )
     parser.add_argument(
-        "--backend", type=str, default=None,
+        "--backend",
+        type=str,
+        default=None,
         help="Backend subdirectory to load data from. Auto-detected if omitted.",
     )
     parser.add_argument(
-        "--pages", type=int, nargs="*", default=None,
+        "--pages",
+        type=int,
+        nargs="*",
+        default=None,
         help="Page indices to visualize (0-based). Default: first 3 pages with content.",
     )
     parser.add_argument(
-        "--data-dir", type=Path, default=Path("data"),
+        "--data-dir",
+        type=Path,
+        default=Path("data"),
         help="Root directory for extracted JSON data. Default: data/.",
     )
     parser.add_argument(
-        "--output-dir", type=Path, default=Path("output"),
+        "--output-dir",
+        type=Path,
+        default=Path("output"),
         help="Root directory for visualization outputs. Default: output/.",
     )
     parser.add_argument(
-        "--dom", action="store_true", default=False,
+        "--dom",
+        action="store_true",
+        default=False,
         help="Also generate interactive DOM graph HTML files (full-doc + per page).",
     )
     args = parser.parse_args()
@@ -89,8 +102,10 @@ def main() -> None:
     else:
         content_list = load_content_list(args.data_dir, doc_name)
 
-    print(f"  {len(content_list)} content blocks across "
-          f"{len(set(x.get('page_idx', 0) for x in content_list))} pages")
+    print(
+        f"  {len(content_list)} content blocks across "
+        f"{len(set(x.get('page_idx', 0) for x in content_list))} pages"
+    )
 
     saved = generate_all_visualizations(
         pdf_path=args.pdf,
@@ -101,7 +116,7 @@ def main() -> None:
         dom=args.dom,
     )
 
-    print(f"\nDone. {len(saved)} files saved to {args.output_dir / 'plots'}/")
+    print(f"\nDone. {len(saved)} files saved to {args.output_dir / doc_name / 'plots'}/")
 
 
 if __name__ == "__main__":

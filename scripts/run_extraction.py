@@ -1,9 +1,9 @@
 """Main orchestration script: PDF → MinerU extraction → XML synthesis → WandB logging.
 
 Usage:
-    uv run scripts/run_extraction.py --pdf docs/0001.pdf
-    uv run scripts/run_extraction.py --pdf docs/0001.pdf --backend pipeline
-    uv run scripts/run_extraction.py --pdf docs/ --backend hybrid-auto-engine
+    uv run scripts/run_extraction.py --pdf data/pdfs/0001.pdf
+    uv run scripts/run_extraction.py --pdf data/pdfs/0001.pdf --backend pipeline
+    uv run scripts/run_extraction.py --pdf data/pdfs/ --backend hybrid-auto-engine
 """
 
 import argparse
@@ -14,14 +14,14 @@ from pathlib import Path
 
 import numpy as np
 import torch
+
 import wandb
 
-# Reproducibility seeds
+# Reproducibility seeds (CPU-only; CUDA seeds are deferred to avoid initializing
+# the CUDA context before vLLM's engine process can do so cleanly)
 random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
-if torch.cuda.is_available():
-    torch.cuda.manual_seed_all(42)
 
 # Project root on path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -65,6 +65,8 @@ def process_pdf(
     start_page: int,
     end_page: int | None,
     wandb_run: wandb.sdk.wandb_run.Run,
+    server_url: str | None = None,
+    title_aided_config: dict | None = None,
 ) -> Path:
     """Extract a single PDF, synthesize XML, and log metrics.
 
@@ -77,6 +79,8 @@ def process_pdf(
         start_page: Zero-based first page index.
         end_page: Zero-based last page index (inclusive), or None for all.
         wandb_run: Active WandB run for artifact logging.
+        server_url: VLM server URL for http-client backends.
+        title_aided_config: Optional LLM config for H1–H4 hierarchy detection.
 
     Returns:
         Path to the saved XML file.
@@ -94,6 +98,8 @@ def process_pdf(
         language=language,
         start_page=start_page,
         end_page=end_page,
+        server_url=server_url,
+        title_aided_config=title_aided_config,
     )
 
     print(
@@ -130,7 +136,7 @@ def process_pdf(
         doc_name=doc_name,
     )
 
-    xml_output_path = output_dir / f"{doc_name}_{backend}.xml"
+    xml_output_path = output_dir / doc_name / f"{doc_name}_{backend}.xml"
     save_document_xml(xml_str, xml_output_path)
     print(f"[{backend}] XML saved: {xml_output_path}")
 
@@ -162,9 +168,15 @@ def main() -> None:
     parser.add_argument(
         "--backend",
         type=str,
-        default="hybrid-auto-engine",
+        default="hybrid-http-client",
         choices=sorted(SUPPORTED_BACKENDS),
-        help="MinerU inference backend. Default: hybrid-auto-engine.",
+        help="MinerU inference backend. Default: hybrid-http-client (uses running VLM server).",
+    )
+    parser.add_argument(
+        "--server-url",
+        type=str,
+        default=None,
+        help="VLM server base URL for http-client backends, e.g. http://localhost:8000. Required with hybrid-http-client.",
     )
     parser.add_argument(
         "--lang",
@@ -197,7 +209,58 @@ def main() -> None:
         help="Directory for synthesized XML. Default: output/.",
     )
 
+    title_group = parser.add_argument_group(
+        "title-aided",
+        "LLM-aided title hierarchy (H1–H4). All three flags are required together.",
+    )
+    title_group.add_argument(
+        "--title-aided-api-key",
+        type=str,
+        default=None,
+        help="API key for the LLM endpoint (use 'dummy' for local servers).",
+    )
+    title_group.add_argument(
+        "--title-aided-base-url",
+        type=str,
+        default=None,
+        help="Base URL of the OpenAI-compatible LLM endpoint, e.g. http://localhost:8000/v1.",
+    )
+    title_group.add_argument(
+        "--title-aided-model",
+        type=str,
+        default=None,
+        help="Model name to use for title hierarchy inference.",
+    )
+    title_group.add_argument(
+        "--title-aided-enable-thinking",
+        action="store_true",
+        default=False,
+        help=(
+            "Pass enable_thinking=True to the LLM endpoint. Required for "
+            "Qwen3-*-Thinking models so the model wraps reasoning in <think> "
+            "tags that MinerU can strip before parsing the dict."
+        ),
+    )
+
     args = parser.parse_args()
+
+    title_aided_args = (args.title_aided_api_key, args.title_aided_base_url, args.title_aided_model)
+    if any(title_aided_args) and not all(title_aided_args):
+        parser.error(
+            "--title-aided-api-key, --title-aided-base-url, and --title-aided-model must all be set together."
+        )
+    title_aided_config: dict | None = None
+    if all(title_aided_args):
+        title_aided_config = {
+            "api_key": args.title_aided_api_key,
+            "base_url": args.title_aided_base_url,
+            "model": args.title_aided_model,
+        }
+        if args.title_aided_enable_thinking:
+            title_aided_config["enable_thinking"] = True
+
+    if args.backend == "hybrid-http-client" and not args.server_url:
+        parser.error("--server-url is required when --backend is hybrid-http-client.")
 
     pdfs = collect_pdfs(args.pdf)
     print(f"Found {len(pdfs)} PDF(s) to process with backend={args.backend}")
@@ -210,6 +273,8 @@ def main() -> None:
                 "language": args.lang,
                 "start_page": args.start_page,
                 "end_page": args.end_page,
+                "server_url": args.server_url,
+                "title_aided": title_aided_config is not None,
             },
         )
         try:
@@ -222,6 +287,8 @@ def main() -> None:
                 start_page=args.start_page,
                 end_page=args.end_page,
                 wandb_run=run,
+                server_url=args.server_url,
+                title_aided_config=title_aided_config,
             )
         finally:
             wandb.finish()

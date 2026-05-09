@@ -476,14 +476,14 @@ def _build_networkx_graph(tree: dict, *, collapse_leaves: bool = True) -> nx.DiG
             size = 30
             tooltip = f"type: document\n{text}\n{counts_str}"
         elif ntype == "title":
-            label = f"[H{level}] {text[:25]}  {page_range}"
+            label = f"[H{level}] {text[:33]}  {page_range}"
             shape = "dot"
             color = CONTENT_TYPE_COLORS["title"]
             size = min(50, int(10 + 3 * math.sqrt(max(total_desc, 1))))
             tooltip = f"type: h{level}\n{text[:80]}\n{page_range}\n{bbox_str}\n{counts_str}"
         else:
             icon = CONTENT_TYPE_ICONS.get(ntype, "?")
-            label = f"[{icon}] {text[:25]}  p.{page_idx}"
+            label = f"[{icon}] {text[:30]}  p.{page_idx}"
             shape = "square"
             color = CONTENT_TYPE_COLORS.get(ntype, DEFAULT_COLOR)
             size = 8
@@ -616,14 +616,18 @@ _D3_TREE_TEMPLATE: str = """\
     body { background: #1a1a2e; overflow: hidden; }
     svg { width: 100vw; height: 100vh; cursor: grab; }
     svg:active { cursor: grabbing; }
-    .node circle { cursor: pointer; stroke-width: 2px; }
-    .node text { font: 10px monospace; fill: #ccc; pointer-events: none; user-select: none; text-anchor: middle; }
+    .node circle { cursor: pointer; }
+    .node text {
+      font: 11px monospace; fill: #ccc;
+      pointer-events: none; user-select: none;
+      dominant-baseline: central;
+    }
     .link { fill: none; stroke: #555; stroke-opacity: .6; stroke-width: 1.5px; }
     #tt {
       position: fixed; background: rgba(0,0,0,.85); color: #eee;
       padding: 8px 10px; border-radius: 4px; font: 11px monospace;
       white-space: pre; pointer-events: none; display: none;
-      z-index: 10; border: 1px solid #444; max-width: 320px;
+      z-index: 10; border: 1px solid #444; max-width: 360px;
     }
     #rb {
       position: fixed; top: 12px; right: 12px; background: #2a2a4e;
@@ -631,62 +635,105 @@ _D3_TREE_TEMPLATE: str = """\
       padding: 6px 12px; cursor: pointer; font: 12px monospace; z-index: 10;
     }
     #rb:hover { background: #3a3a6e; }
+    #hint {
+      position: fixed; bottom: 12px; left: 12px; color: #666;
+      font: 10px monospace; pointer-events: none;
+    }
   </style>
 </head>
 <body>
   <div id="tt"></div>
   <button id="rb">Reset view</button>
+  <div id="hint">scroll = zoom · drag = pan · click node = expand/collapse</div>
   <svg id="tree"></svg>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script>
   const DATA = __DATA__;
-  const W = window.innerWidth, MT = 60;
+
+  // ── Layout constants ───────────────────────────────────────────────────────
+  // Left-to-right horizontal tree: depth grows rightward, siblings stack
+  // vertically.  Row spacing (ROW_H) must be ≥ font size so labels never
+  // overlap; column spacing (COL_W) must fit the longest label in each column.
+  const ROW_H  = 22;   // px between sibling rows  (≥ font size = 11 → no overlap)
+  const COL_W  = 290;  // px between depth levels  (≈ 40 chars × 7px + margins)
+  const MAX_LBL = 40;  // max label characters before truncation
+  const R_BASE  = 6;   // default node circle radius
+
   const svg = d3.select("#tree");
-  const g = svg.append("g");
-  const initT = d3.zoomIdentity.translate(W / 2, MT);
-  const zoom = d3.zoom().scaleExtent([.05, 4])
+  const g   = svg.append("g");
+
+  // Zoom/pan
+  const zoom = d3.zoom().scaleExtent([0.03, 4])
     .on("zoom", e => g.attr("transform", e.transform));
-  svg.call(zoom).call(zoom.transform, initT);
-  document.getElementById("rb").onclick = () =>
-    svg.transition().duration(400).call(zoom.transform, initT);
+  svg.call(zoom);
+
   const tt = d3.select("#tt");
   svg.on("mousemove", e =>
     tt.style("left", (e.clientX + 14) + "px").style("top", (e.clientY - 14) + "px"));
-  const treeLayout = d3.tree().nodeSize([80, 180]);
+
+  // Horizontal tree: tree layout uses x for vertical position, y for depth.
+  const treeLayout = d3.tree().nodeSize([ROW_H, COL_W]);
+
   let root = d3.hierarchy(DATA);
   root.x0 = 0; root.y0 = 0;
+
+  // Start collapsed beyond depth 1 so the initial view is readable.
   root.descendants().forEach(d => {
     if (d.depth > 1 && d.children) { d._children = d.children; d.children = null; }
   });
-  const diag = d3.linkVertical().x(d => d.x).y(d => d.y);
+
+  // Horizontal bezier: swap d.x↔d.y so depth (d.y) maps to screen-x,
+  // breadth (d.x) maps to screen-y.
+  const diag = d3.linkHorizontal().x(d => d.y).y(d => d.x);
+
   let uid = 0;
+
   function update(src) {
     treeLayout(root);
     const nodes = root.descendants(), links = root.links();
+
+    // ── Nodes ────────────────────────────────────────────────────────────────
     const node = g.selectAll("g.node").data(nodes, d => d.uid ?? (d.uid = ++uid));
+
     const enter = node.enter().append("g").attr("class", "node")
-      .attr("transform", `translate(${src.x0 ?? 0},${src.y0 ?? 0})`)
-      .on("click", (e, d) => {
+      // new nodes enter from parent's previous position
+      .attr("transform", `translate(${src.y0 ?? 0},${src.x0 ?? 0})`)
+      .on("click", (_, d) => {
         if (d.children) { d._children = d.children; d.children = null; }
-        else { d.children = d._children; d._children = null; }
+        else             { d.children = d._children; d._children = null; }
         update(d);
       })
-      .on("mouseover", (e, d) => tt.style("display", "block").text(d.data.tooltip ?? ""))
-      .on("mouseout", () => tt.style("display", "none"));
-    enter.append("circle").attr("r", 0).attr("stroke", d => d.data.color);
+      .on("mouseover", (_, d) => tt.style("display", "block").text(d.data.tooltip ?? ""))
+      .on("mouseout",  ()     => tt.style("display", "none"));
+
+    enter.append("circle").attr("r", 0).attr("stroke", d => d.data.color)
+      .attr("stroke-width", 2).style("cursor", "pointer");
+
+    // Label to the RIGHT of the circle; truncated to MAX_LBL chars.
     enter.append("text")
-      .attr("dy", d => (d.data.r ?? 6) + 14)
-      .attr("x", 0)
-      .text(d => { const n = d.data.name; return n.length > 22 ? n.slice(0, 22) + "…" : n; });
+      .attr("x", d => (d.data.r ?? R_BASE) + 5)
+      .attr("text-anchor", "start")
+      .text(d => {
+        const n = d.data.name;
+        return n.length > MAX_LBL ? n.slice(0, MAX_LBL) + "…" : n;
+      });
+
     const merged = enter.merge(node);
+
+    // Animate into final position (depth→x, breadth→y in screen coords).
     merged.transition().duration(300)
-      .attr("transform", d => `translate(${d.x},${d.y})`);
+      .attr("transform", d => `translate(${d.y},${d.x})`);
+
     merged.select("circle").transition().duration(300)
-      .attr("r", d => d.data.r ?? 6)
+      .attr("r",    d => d.data.r ?? R_BASE)
       .attr("fill", d => (d._children || d.children) ? d.data.color : "#fff")
-      .attr("stroke", d => d.data.color).attr("stroke-width", 2);
+      .attr("stroke", d => d.data.color);
+
+    // Exiting nodes collapse back toward the clicked node.
     node.exit().transition().duration(300)
-      .attr("transform", `translate(${src.x ?? 0},${src.y ?? 0})`).remove();
+      .attr("transform", `translate(${src.y ?? 0},${src.x ?? 0})`).remove();
+
+    // ── Links ────────────────────────────────────────────────────────────────
     const link = g.selectAll("path.link").data(links, d => d.target.uid);
     const lo = { source: { x: src.x0 ?? 0, y: src.y0 ?? 0 },
                  target: { x: src.x0 ?? 0, y: src.y0 ?? 0 } };
@@ -695,9 +742,32 @@ _D3_TREE_TEMPLATE: str = """\
     link.exit().transition().duration(300)
       .attr("d", diag({ source: { x: src.x ?? 0, y: src.y ?? 0 },
                         target: { x: src.x ?? 0, y: src.y ?? 0 } })).remove();
+
     nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
   }
+
+  // Initial render, then fit visible nodes into viewport.
   update(root);
+
+  function fitVisible() {
+    const nodes = root.descendants().filter(d => d.children || !d.parent);
+    if (!nodes.length) return;
+    const xs = nodes.map(d => d.y), ys = nodes.map(d => d.x);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs);
+    const y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const W = window.innerWidth, H = window.innerHeight;
+    const pad = 60;
+    const scale = Math.min(0.95, (W - pad*2) / (x1 - x0 + 1), (H - pad*2) / (y1 - y0 + 1));
+    const tx = pad - x0 * scale;
+    const ty = H/2 - (y0 + y1)/2 * scale;
+    svg.transition().duration(500)
+      .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+  }
+
+  // Slight delay so the DOM has rendered before we measure.
+  setTimeout(fitVisible, 350);
+
+  document.getElementById("rb").onclick = fitVisible;
   </script>
 </body>
 </html>"""
@@ -941,7 +1011,7 @@ def generate_all_visualizations(
         pdf_path: Path to the source PDF.
         content_list: Flat content list from content_list.json.
         doc_name: Document name used in filenames and titles.
-        output_dir: Root output directory (files go under output_dir/plots/).
+        output_dir: Root output directory (files go under output_dir/doc_name/plots/).
         pages: List of zero-based page indices to visualize. If None, uses
             the first 3 pages that have content.
         dom: When True, also generate interactive DOM graph HTML files
@@ -950,7 +1020,7 @@ def generate_all_visualizations(
     Returns:
         List of Paths to all saved files (PNGs and optionally HTMLs).
     """
-    plots_dir = output_dir / "plots"
+    plots_dir = output_dir / doc_name / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
 
     if pages is None:

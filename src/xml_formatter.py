@@ -1,11 +1,21 @@
 """XML synthesis from MinerU content_list.json and middle.json outputs."""
 
+import re
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
 from xml.dom import minidom
 
 from src.xml_schema import format_bbox, resolve_tag
+
+# Matches characters that are illegal in XML 1.0 (null bytes, C0 controls except
+# tab/LF/CR, and DEL).  These sometimes appear in MinerU's OCR output.
+_INVALID_XML_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
+
+
+def _clean(text: str) -> str:
+    """Strip XML-illegal control characters from a string."""
+    return _INVALID_XML_RE.sub("", text) if text else text
 
 
 def _set_bbox_attr(element: ET.Element, bbox: list | None) -> None:
@@ -33,11 +43,11 @@ def _build_figure_element(item: dict) -> ET.Element:
 
     for caption_text in item.get("image_caption", []):
         cap_el = ET.SubElement(el, "caption")
-        cap_el.text = caption_text
+        cap_el.text = _clean(caption_text)
 
     for footnote_text in item.get("image_footnote", []):
         fn_el = ET.SubElement(el, "footnote")
-        fn_el.text = footnote_text
+        fn_el.text = _clean(footnote_text)
 
     return el
 
@@ -60,7 +70,7 @@ def _build_chart_element(item: dict) -> ET.Element:
 
     for caption_text in item.get("chart_caption", []):
         cap_el = ET.SubElement(el, "caption")
-        cap_el.text = caption_text
+        cap_el.text = _clean(caption_text)
 
     return el
 
@@ -85,15 +95,15 @@ def _build_table_element(item: dict) -> ET.Element:
 
     for caption_text in item.get("table_caption", []):
         cap_el = ET.SubElement(el, "caption")
-        cap_el.text = caption_text
+        cap_el.text = _clean(caption_text)
 
     if table_body := item.get("table_body"):
         body_el = ET.SubElement(el, "table-body")
-        body_el.text = table_body
+        body_el.text = _clean(table_body)
 
     for footnote_text in item.get("table_footnote", []):
         fn_el = ET.SubElement(el, "footnote")
-        fn_el.text = footnote_text
+        fn_el.text = _clean(footnote_text)
 
     return el
 
@@ -109,7 +119,7 @@ def _build_equation_element(item: dict) -> ET.Element:
     """
     el = ET.Element("math-block")
     _set_bbox_attr(el, item.get("bbox"))
-    el.text = item.get("text", "")
+    el.text = _clean(item.get("text", ""))
 
     if img_path := item.get("img_path"):
         img_el = ET.SubElement(el, "img")
@@ -131,7 +141,7 @@ def _build_code_element(item: dict) -> ET.Element:
     _set_bbox_attr(el, item.get("bbox"))
     if sub_type := item.get("sub_type"):
         el.set("sub-type", sub_type)
-    el.text = item.get("text", "")
+    el.text = _clean(item.get("text", ""))
     return el
 
 
@@ -152,7 +162,7 @@ def _build_generic_text_element(item: dict) -> ET.Element:
     for attr_name, attr_value in tag_config.extra_attrs.items():
         el.set(attr_name, attr_value)
     _set_bbox_attr(el, item.get("bbox"))
-    el.text = item.get("text", "")
+    el.text = _clean(item.get("text", ""))
     return el
 
 

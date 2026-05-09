@@ -1,5 +1,4 @@
 CLAUDE.md
-docs/
 .pytest_cache/
 __pycache__/
 .ruff_cache/
@@ -9,3 +8,5 @@ wandb/
 data/
 output/
 lib/
+docs/superpowers/
+mineru_results/
