@@ -1,0 +1,35 @@
+# ─────────────────────────────────────────────
+# OmniDocParser — Extractor Pipeline Config
+# ─────────────────────────────────────────────
+
+# MinerU extraction settings
+extraction:
+  # Backend: pipeline | vlm-auto-engine | hybrid-auto-engine | hybrid-http-client
+  backend: hybrid-auto-engine
+  language: en          # OCR language hint (e.g. "en", "ch")
+  start_page: 0         # Zero-based first page (inclusive)
+  end_page: null        # Zero-based last page (inclusive); null = all pages
+  server_url: null      # Required only for hybrid-http-client backend
+
+# Output directories
+paths:
+  data_dir: data        # Raw MinerU JSON outputs (middle.json, content_list.json)
+  output_dir: output    # Synthesized XML and visualizations
+
+# LLM-aided title hierarchy (H1–H4 level detection)
+title_aided:
+  enabled: false
+  api_key: null         # API key for the LLM endpoint ("dummy" for local servers)
+  base_url: null        # OpenAI-compatible endpoint, e.g. http://localhost:8000/v1
+  model: null           # Model name, e.g. Qwen3-VL-8B-Instruct
+  enable_thinking: false  # Set true for Qwen3-*-Thinking models
+
+# SigLIP2 zero-shot figure classification
+figure_classification:
+  enabled: false
+  model: google/siglip2-base-patch16-384
+  batch_size: 32
+  device: cuda
+
+# Experiment tracking
+wandb_enabled: true
