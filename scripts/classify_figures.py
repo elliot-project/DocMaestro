@@ -63,7 +63,7 @@ def _serialize_xml(tree: ET.ElementTree, xml_path: Path) -> None:
 
 
 def _compute_stats(
-    results: dict,
+    results: dict[ET.Element, tuple[str, float | None]],
 ) -> tuple[int, int, dict[str, int], list[float]]:
     """Compute classification summary statistics from classify_figures results.
 

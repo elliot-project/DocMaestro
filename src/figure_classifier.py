@@ -148,7 +148,7 @@ class FigureClassifier:
             img_el = fig.find("img")
             if img_el is None or not img_el.get("src"):
                 warnings.warn(
-                    f"<figure bbox='{fig.get('bbox', 'unknown')}'> has no img_path — "
+                    f"<figure bbox='{fig.get('bbox', 'unknown')}'> has no <img src> child — "
                     "setting category='unknown'",
                     stacklevel=2,
                 )
@@ -228,12 +228,13 @@ class FigureClassifier:
             # Fallback to CPU. NOTE: This reloads the model from disk which is slow (~30-90s)
             # but is correct. On a healthy server this path should never be hit in production.
             warnings.warn("CUDA OOM during batch inference — falling back to CPU", stacklevel=2)
-            cpu_clf = FigureClassifier(
-                model_name=self.model_name,
-                device="cpu",
-                batch_size=max(1, len(valid_images) // 2),
-            )
-            fallback = cpu_clf._run_batch([img_paths[i] for i in valid_indices])
+            half = max(1, len(valid_images) // 2)
+            cpu_clf = FigureClassifier(model_name=self.model_name, device="cpu", batch_size=half)
+            fallback: list[tuple[str, float | None]] = []
+            valid_paths = [img_paths[i] for i in valid_indices]
+            for chunk_start in range(0, len(valid_paths), half):
+                chunk = valid_paths[chunk_start : chunk_start + half]
+                fallback.extend(cpu_clf._run_batch(chunk))
             for out_idx, res in zip(valid_indices, fallback):
                 results[out_idx] = res
 

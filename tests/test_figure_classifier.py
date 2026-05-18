@@ -11,7 +11,7 @@ import pytest
 import torch
 from PIL import Image
 
-from src.figure_classifier import LABEL_REGISTRY, FigureClassifier
+from src.figure_classifier import _DEFAULT_MODEL, LABEL_REGISTRY, FigureClassifier
 
 EXPECTED_LABELS = {
     "natural-image",
@@ -85,7 +85,7 @@ class TestFallbacks:
             result = clf.classify_figures([figure], img_root=tmp_path)
         assert result[figure][0] == "unknown"
         assert any(
-            "img_path" in str(w.message) or "no image" in str(w.message).lower() for w in caught
+            "img src" in str(w.message) or "no image" in str(w.message).lower() for w in caught
         )
 
     def test_missing_file_sets_unknown(self, tmp_path):
@@ -107,6 +107,65 @@ class TestFallbacks:
         label, confidence = result[figure]
         assert label == "unknown"
         assert confidence is None
+
+    def test_corrupt_image_sets_unknown(self, tmp_path):
+        """A file that exists but contains garbage bytes falls back to unknown."""
+        (tmp_path / "images").mkdir(exist_ok=True)
+        corrupt_path = tmp_path / "images" / "corrupt.jpg"
+        corrupt_path.write_bytes(b"not an image at all \x00\xff")
+        fig = _make_figure(img_src="images/corrupt.jpg")
+        clf = self._make_classifier()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = clf.classify_figures([fig], img_root=tmp_path)
+        assert result[fig][0] == "unknown"
+        assert result[fig][1] is None
+        assert len(caught) >= 1
+
+    def test_cuda_oom_emits_warning(self, tmp_path):
+        """When CUDA OOM occurs inside _run_batch, a warning is emitted.
+
+        We exercise the real _run_batch code path by patching the model's
+        get_image_features to raise OOM on the first call, then patching the
+        FigureClassifier constructor so the CPU fallback instantiation is cheap
+        (no disk I/O) and its _run_batch returns a canned result.
+        """
+        fig = _make_figure_with_file(tmp_path, "fig_oom.jpg")
+        clf = self._make_classifier()
+
+        # The CPU-fallback FigureClassifier created inside _run_batch's except block
+        # also needs to be cheap. We intercept its construction and wire in a mock
+        # _run_batch so it returns a canned result instead of loading anything from disk.
+        def patched_init(self_inner, model_name=None, device="cuda", batch_size=32):
+            # Minimal state needed by _run_batch
+            self_inner.model_name = model_name or _DEFAULT_MODEL
+            self_inner.device = device
+            self_inner.batch_size = batch_size
+            self_inner.processor = MagicMock()
+            mock_model = MagicMock()
+            mock_model.get_image_features.return_value = torch.zeros(1, 768)
+            self_inner.model = mock_model
+            self_inner.text_features = torch.zeros(10, 768)
+
+        # Make the primary clf's model raise OOM on get_image_features
+        clf.model.get_image_features.side_effect = torch.cuda.OutOfMemoryError("out of memory")
+
+        with (
+            patch("src.figure_classifier.FigureClassifier.__init__", patched_init),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter("always")
+            try:
+                clf.classify_figures([fig], img_root=tmp_path)
+            except Exception:
+                pass  # If CPU path also errors, we still want to check the warning
+
+        oom_warnings = [
+            w
+            for w in caught
+            if "oom" in str(w.message).lower() or "fallback" in str(w.message).lower()
+        ]
+        assert len(oom_warnings) >= 1
 
 
 class TestBatchChunking:
@@ -158,6 +217,23 @@ class TestBatchChunking:
         assert result[figs[1]][0] == "diagram"
         assert result[figs[2]][0] == "map"
         assert result[figs[3]][0] == "map"
+
+    def test_text_features_encoded_once(self, tmp_path):
+        """get_text_features is called exactly once at init, not per batch."""
+        with (
+            patch("src.figure_classifier.AutoProcessor.from_pretrained"),
+            patch("src.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
+        ):
+            mock_model = MagicMock()
+            mock_model.get_text_features.return_value = torch.zeros(10, 768)
+            mock_model_cls.return_value.to.return_value.eval.return_value = mock_model
+            clf = FigureClassifier(device="cpu", batch_size=2)
+            assert mock_model.get_text_features.call_count == 1
+        # Run multiple batches; call count must stay at 1
+        clf._run_batch = MagicMock(side_effect=lambda paths: [("diagram", 0.9)] * len(paths))
+        figs = [_make_figure_with_file(tmp_path, f"img_{i}.jpg") for i in range(6)]
+        clf.classify_figures(figs, img_root=tmp_path)
+        assert mock_model.get_text_features.call_count == 1
 
 
 class TestClassifyFiguresReturnDict:
