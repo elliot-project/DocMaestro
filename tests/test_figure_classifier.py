@@ -11,7 +11,8 @@ import pytest
 import torch
 from PIL import Image
 
-from src.figure_classifier import _DEFAULT_MODEL, LABEL_REGISTRY, FigureClassifier
+from src.figure_classifier import _DEFAULT_MODEL, FigureClassifier
+from src.utils.labels import LABEL_REGISTRY
 
 EXPECTED_LABELS = {
     "natural-image",
@@ -31,14 +32,17 @@ class TestLabelRegistry:
     def test_all_labels_present(self):
         assert set(LABEL_REGISTRY.keys()) == EXPECTED_LABELS
 
-    def test_descriptions_are_non_empty_strings(self):
-        for label, description in LABEL_REGISTRY.items():
-            assert isinstance(description, str), f"{label} description is not a string"
-            assert len(description) > 100, f"{label} description is too short"
+    def test_descriptions_are_lists_of_non_empty_strings(self):
+        for label, descriptions in LABEL_REGISTRY.items():
+            assert isinstance(descriptions, list), f"{label} value must be a list"
+            assert len(descriptions) >= 1, f"{label} must have at least one description"
+            for desc in descriptions:
+                assert isinstance(desc, str), f"{label} contains a non-string description"
+                assert len(desc) > 20, f"{label} has a description that is too short"
 
     def test_descriptions_are_unique(self):
-        descriptions = list(LABEL_REGISTRY.values())
-        assert len(set(descriptions)) == len(descriptions), "Duplicate descriptions found"
+        all_descriptions = [desc for descs in LABEL_REGISTRY.values() for desc in descs]
+        assert len(set(all_descriptions)) == len(all_descriptions), "Duplicate descriptions found"
 
     def test_keys_are_kebab_case(self):
         pattern = re.compile(r"^[a-z][a-z0-9-]+$")
@@ -72,7 +76,7 @@ class TestFallbacks:
             patch("src.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
         ):
             mock_model = MagicMock()
-            mock_model.get_text_features.return_value = torch.zeros(10, 768)
+            mock_model.get_text_features.return_value = torch.zeros(50, 768)
             # Chain: from_pretrained(...).to(...).eval() must return mock_model
             mock_model_cls.return_value.to.return_value.eval.return_value = mock_model
             return FigureClassifier(device="cpu", batch_size=4)
@@ -176,7 +180,7 @@ class TestBatchChunking:
             patch("src.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
         ):
             mock_model = MagicMock()
-            mock_model.get_text_features.return_value = torch.zeros(10, 768)
+            mock_model.get_text_features.return_value = torch.zeros(50, 768)
             mock_model_cls.return_value.to.return_value.eval.return_value = mock_model
             clf = FigureClassifier(device="cpu", batch_size=batch_size)
         clf._run_batch = MagicMock(side_effect=lambda paths: [("diagram", 0.9)] * len(paths))
@@ -225,7 +229,7 @@ class TestBatchChunking:
             patch("src.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
         ):
             mock_model = MagicMock()
-            mock_model.get_text_features.return_value = torch.zeros(10, 768)
+            mock_model.get_text_features.return_value = torch.zeros(50, 768)
             mock_model_cls.return_value.to.return_value.eval.return_value = mock_model
             clf = FigureClassifier(device="cpu", batch_size=2)
             assert mock_model.get_text_features.call_count == 1
@@ -249,7 +253,7 @@ class TestClassifyFiguresReturnDict:
             patch("src.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
         ):
             mock_model = MagicMock()
-            mock_model.get_text_features.return_value = torch.zeros(10, 768)
+            mock_model.get_text_features.return_value = torch.zeros(50, 768)
             mock_model_cls.return_value.to.return_value.eval.return_value = mock_model
             clf = FigureClassifier(device="cpu", batch_size=32)
         clf._run_batch = MagicMock(side_effect=lambda paths: [(label, conf)] * len(paths))
