@@ -55,11 +55,14 @@ def _make_figure(img_src: str | None = None) -> ET.Element:
 class TestFallbacks:
     def _make_classifier(self) -> FigureClassifier:
         """Instantiate FigureClassifier with the model loading mocked out."""
-        with patch("src.figure_classifier.AutoProcessor.from_pretrained"), \
-             patch("src.figure_classifier.AutoModel.from_pretrained") as mock_model_cls:
+        with (
+            patch("src.figure_classifier.AutoProcessor.from_pretrained"),
+            patch("src.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
+        ):
             mock_model = MagicMock()
             mock_model.get_text_features.return_value = torch.zeros(10, 768)
-            mock_model_cls.return_value = mock_model
+            # Chain: from_pretrained(...).to(...).eval() must return mock_model
+            mock_model_cls.return_value.to.return_value.eval.return_value = mock_model
             return FigureClassifier(device="cpu", batch_size=4)
 
     def test_no_img_child_sets_unknown(self, tmp_path):
@@ -69,8 +72,9 @@ class TestFallbacks:
             warnings.simplefilter("always")
             result = clf.classify_figures([figure], img_root=tmp_path)
         assert result[figure][0] == "unknown"
-        assert any("img_path" in str(w.message) or "no image" in str(w.message).lower()
-                   for w in caught)
+        assert any(
+            "img_path" in str(w.message) or "no image" in str(w.message).lower() for w in caught
+        )
 
     def test_missing_file_sets_unknown(self, tmp_path):
         clf = self._make_classifier()
@@ -79,7 +83,8 @@ class TestFallbacks:
             warnings.simplefilter("always")
             result = clf.classify_figures([figure], img_root=tmp_path)
         assert result[figure][0] == "unknown"
-        assert len(caught) >= 1
+        assert len(caught) == 1
+        assert "not found" in str(caught[0].message).lower()
 
     def test_unknown_has_no_confidence(self, tmp_path):
         clf = self._make_classifier()

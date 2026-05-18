@@ -104,6 +104,7 @@ class FigureClassifier:
     ) -> None:
         self.device = device
         self.batch_size = batch_size
+        self.model_name = model_name
         self.processor = AutoProcessor.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name).to(device).eval()
         self.text_features = self._encode_labels()
@@ -176,7 +177,7 @@ class FigureClassifier:
 
         return results
 
-    def _run_batch(self, img_paths: list[Path]) -> list[tuple[str, float]]:
+    def _run_batch(self, img_paths: list[Path]) -> list[tuple[str, float | None]]:
         """Run a single batched forward pass for a list of image paths.
 
         Images are loaded in parallel via ThreadPoolExecutor. A corrupt or
@@ -193,7 +194,7 @@ class FigureClassifier:
             try:
                 return Image.open(p).convert("RGB")
             except (UnidentifiedImageError, OSError) as exc:
-                warnings.warn(f"Could not load image {p}: {exc} — skipping", stacklevel=4)
+                warnings.warn(f"Could not load image {p}: {exc} — skipping", stacklevel=1)
                 return None
 
         with ThreadPoolExecutor() as pool:
@@ -208,14 +209,14 @@ class FigureClassifier:
             return results
 
         try:
-            inputs = self.processor(
-                images=valid_images, return_tensors="pt", padding=True
-            ).to(self.device)
+            inputs = self.processor(images=valid_images, return_tensors="pt", padding=True).to(
+                self.device
+            )
             with torch.no_grad():
                 image_features = self.model.get_image_features(**inputs)
             image_features = F.normalize(image_features, dim=-1)
             scores = image_features @ self.text_features.T  # [B x N]
-            probs = F.softmax(scores, dim=-1)
+            probs = torch.sigmoid(scores)
             confidences, indices = probs.max(dim=-1)
 
             for out_idx, (conf, idx) in zip(
@@ -224,10 +225,11 @@ class FigureClassifier:
                 results[out_idx] = (_LABELS[idx], round(conf, 3))
 
         except torch.cuda.OutOfMemoryError:
-            # Halve batch size and retry on CPU for this batch
+            # Fallback to CPU. NOTE: This reloads the model from disk which is slow (~30-90s)
+            # but is correct. On a healthy server this path should never be hit in production.
             warnings.warn("CUDA OOM during batch inference — falling back to CPU", stacklevel=2)
             cpu_clf = FigureClassifier(
-                model_name=_DEFAULT_MODEL,
+                model_name=self.model_name,
                 device="cpu",
                 batch_size=max(1, len(valid_images) // 2),
             )
