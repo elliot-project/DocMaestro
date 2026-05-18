@@ -51,6 +51,43 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _serialize_xml(tree: ET.ElementTree, xml_path: Path) -> None:
+    """Write an indented XML tree to disk.
+
+    Args:
+        tree: The ElementTree to serialize.
+        xml_path: Destination file path.
+    """
+    ET.indent(tree.getroot(), space="  ")
+    tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+
+
+def _compute_stats(
+    results: dict,
+) -> tuple[int, int, dict[str, int], list[float]]:
+    """Compute classification summary statistics from classify_figures results.
+
+    Args:
+        results: Dict mapping ET.Element to (label, confidence | None).
+
+    Returns:
+        Tuple of (n_classified, n_unknown, label_counts, confidences).
+    """
+    label_counts: dict[str, int] = {}
+    n_classified = 0
+    n_unknown = 0
+    confidences: list[float] = []
+    for label, conf in results.values():
+        if label == "unknown":
+            n_unknown += 1
+        else:
+            n_classified += 1
+            label_counts[label] = label_counts.get(label, 0) + 1
+            if conf is not None:
+                confidences.append(conf)
+    return n_classified, n_unknown, label_counts, confidences
+
+
 def main() -> None:
     """Run the figure classification post-processing pass."""
     args = parse_args()
@@ -62,7 +99,10 @@ def main() -> None:
     img_root: Path = (args.img_root or xml_path.parent).resolve()
 
     # Parse XML — raise immediately on malformed input
-    tree = ET.parse(xml_path)
+    try:
+        tree = ET.parse(xml_path)
+    except ET.ParseError as exc:
+        sys.exit(f"Malformed XML in {xml_path}: {exc}")
     root = tree.getroot()
     figures = root.findall(".//figure")
 
@@ -94,31 +134,13 @@ def main() -> None:
             fig.set("category_confidence", f"{confidence:.3f}")
 
     # Serialize back to same path with consistent pretty-printing
-    from xml.dom import minidom
-
-    xml_str = ET.tostring(root, encoding="unicode")
-    pretty = minidom.parseString(xml_str).toprettyxml(indent="  ")
-    lines = pretty.splitlines()
-    if lines and lines[0].startswith("<?xml"):
-        lines = lines[1:]
-    xml_path.write_text('<?xml version="1.0" ?>\n' + "\n".join(lines) + "\n", encoding="utf-8")
+    _serialize_xml(tree, xml_path)
 
     # Compute summary stats
-    label_counts: dict[str, int] = {}
-    n_classified = 0
-    n_unknown = 0
-    confidences = []
-    for label, conf in results.values():
-        if label == "unknown":
-            n_unknown += 1
-        else:
-            n_classified += 1
-            label_counts[label] = label_counts.get(label, 0) + 1
-            if conf is not None:
-                confidences.append(conf)
+    n_classified, n_unknown, label_counts, confidences = _compute_stats(results)
 
     mean_conf = sum(confidences) / len(confidences) if confidences else 0.0
-    throughput = n_classified / elapsed if elapsed > 0 else 0.0
+    throughput = len(figures) / elapsed if elapsed > 0 else 0.0
 
     print(f"Classified {n_classified} figures, {n_unknown} unknown in {elapsed:.2f}s")
     print(f"Throughput: {throughput:.1f} img/s | Mean confidence: {mean_conf:.3f}")
@@ -126,19 +148,35 @@ def main() -> None:
     print(f"Enriched XML written to {xml_path}")
 
     if not args.no_wandb:
-        wandb.init(project="mineru-xml-pipeline", job_type="figure-classification")
-        label_count_values = list(label_counts.values())
-        wandb_payload: dict = {
-            "figures/total": len(figures),
-            "figures/classified": n_classified,
-            "figures/unknown": n_unknown,
-            "figures/mean_confidence": mean_conf,
-            "figures/inference_time_s": elapsed,
-            "figures/throughput_img_per_s": throughput,
-        }
-        if label_count_values:
-            wandb_payload["figures/label_distribution"] = wandb.Histogram(label_count_values)
-        wandb.log(wandb_payload)
+        wandb.init(
+            project="mineru-xml-pipeline",
+            job_type="figure-classification",
+            config={
+                "model": args.model,
+                "batch_size": args.batch_size,
+                "device": args.device,
+                "xml_path": str(xml_path),
+            },
+        )
+        wandb.log(
+            {
+                "figures/total": len(figures),
+                "figures/classified": n_classified,
+                "figures/unknown": n_unknown,
+                "figures/mean_confidence": mean_conf,
+                "figures/inference_time_s": elapsed,
+                "figures/throughput_img_per_s": throughput,
+                "figures/label_distribution": wandb.plot.bar(
+                    wandb.Table(
+                        data=[[label, count] for label, count in label_counts.items()],
+                        columns=["label", "count"],
+                    ),
+                    "label",
+                    "count",
+                    title="Figure Label Distribution",
+                ),
+            }
+        )
         wandb.finish()
 
 
