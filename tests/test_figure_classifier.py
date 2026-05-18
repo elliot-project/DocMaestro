@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 import torch
 from PIL import Image
 
@@ -141,8 +142,25 @@ class TestBatchChunking:
         call_lengths = [len(c.args[0]) for c in clf._run_batch.call_args_list]
         assert call_lengths == [4, 4, 1]
 
+    def test_results_mapped_to_correct_figures(self, tmp_path):
+        """Results from distinct batches map to the correct figure elements."""
+        clf = self._make_classifier_with_spy(batch_size=2)
+        figs = [_make_figure_with_file(tmp_path, f"img_{i}.jpg") for i in range(4)]
+        # Batch 1 returns "diagram", batch 2 returns "map"
+        clf._run_batch = MagicMock(
+            side_effect=[
+                [("diagram", 0.9), ("diagram", 0.9)],
+                [("map", 0.8), ("map", 0.8)],
+            ]
+        )
+        result = clf.classify_figures(figs, img_root=tmp_path)
+        assert result[figs[0]][0] == "diagram"
+        assert result[figs[1]][0] == "diagram"
+        assert result[figs[2]][0] == "map"
+        assert result[figs[3]][0] == "map"
 
-class TestXmlAttributesWritten:
+
+class TestClassifyFiguresReturnDict:
     def _classify_with_mock(
         self,
         figures: list[ET.Element],
@@ -171,11 +189,4 @@ class TestXmlAttributesWritten:
         result = self._classify_with_mock([fig], tmp_path, label="screenshot", conf=0.923)
         label, conf = result[fig]
         assert label == "screenshot"
-        assert isinstance(conf, float)
-
-    def test_confidence_in_valid_range(self, tmp_path):
-        figs = [_make_figure_with_file(tmp_path, f"fig_{i}.jpg") for i in range(5)]
-        result = self._classify_with_mock(figs, tmp_path, label="map", conf=0.75)
-        for fig in figs:
-            _, conf = result[fig]
-            assert 0.0 <= conf <= 1.0
+        assert conf == pytest.approx(0.923)
