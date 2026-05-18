@@ -1,7 +1,16 @@
-"""Zero-shot figure classification using SigLIP2."""
+"""Zero-shot figure classification using SigLIP2 text-image embeddings.
+
+This module provides a registry of figure categories with verbose, natural-language
+descriptions designed for zero-shot classification. Each label maps to a detailed
+description fed directly to SigLIP2's text encoder to maximize cosine similarity
+separation between categories.
+"""
 
 from __future__ import annotations
 
+# Maps label slugs (kebab-case) to verbose natural-language descriptions fed directly
+# to the SigLIP2 text encoder. Descriptions are intentionally long and specific to
+# improve zero-shot cosine similarity separation between categories.
 LABEL_REGISTRY: dict[str, str] = {
     "natural-image": (
         "a photograph or camera-captured image of a real-world scene, including outdoor"
