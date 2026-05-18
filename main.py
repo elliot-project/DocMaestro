@@ -48,7 +48,29 @@ def _save_raw_json(result, data_dir: Path, doc_name: str, backend: str) -> None:
     )
 
 
-def _enrich_figures(xml_path: Path, cfg: FigureClassificationConfig) -> None:
+def _find_img_root(extraction_output_dir: Path) -> Path:
+    """Locate the directory that contains MinerU's images/ subfolder.
+
+    MinerU nests its image output inside a backend-specific subdirectory
+    (e.g. data/<doc>/<backend>/<doc>/hybrid_auto/images/). img_path values
+    in content_list.json are relative to that parent, so we search for the
+    deepest images/ directory rather than assuming a fixed structure.
+
+    Args:
+        extraction_output_dir: The output_dir passed to extract().
+
+    Returns:
+        Parent of the images/ folder, or extraction_output_dir as fallback.
+    """
+    candidates = sorted(
+        extraction_output_dir.rglob("images"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0].parent if candidates else extraction_output_dir
+
+
+def _enrich_figures(xml_path: Path, img_root: Path, cfg: FigureClassificationConfig) -> None:
     """Run SigLIP2 zero-shot classification and write category attributes in-place."""
     tree = ET.parse(xml_path)
     root = tree.getroot()
@@ -59,7 +81,7 @@ def _enrich_figures(xml_path: Path, cfg: FigureClassificationConfig) -> None:
     clf = FigureClassifier(model_name=cfg.model, device=cfg.device, batch_size=cfg.batch_size)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        results = clf.classify_figures(figures, img_root=xml_path.parent)
+        results = clf.classify_figures(figures, img_root=img_root)
 
     for w in caught:
         print(f"  [figure-clf] {w.message}", file=sys.stderr)
@@ -152,7 +174,8 @@ def process_document(pdf_path: Path, config: PipelineConfig) -> None:
         # ── 3. Figure classification ──────────────────────────────────────────
         if config.figure_classification.enabled:
             print(f"[{doc_name}] Running figure classification")
-            _enrich_figures(xml_path, config.figure_classification)
+            img_root = _find_img_root(result.output_dir)
+            _enrich_figures(xml_path, img_root, config.figure_classification)
 
         total = time.perf_counter() - t0
         print(f"[{doc_name}] Pipeline complete in {total:.1f}s")
