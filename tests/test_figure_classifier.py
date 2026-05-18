@@ -1,11 +1,14 @@
 """Unit tests for figure_classifier.py."""
 
+import math
 import re
 import warnings
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import torch
+from PIL import Image
 
 from src.figure_classifier import LABEL_REGISTRY, FigureClassifier
 
@@ -52,6 +55,14 @@ def _make_figure(img_src: str | None = None) -> ET.Element:
     return el
 
 
+def _make_figure_with_file(tmp_path: Path, filename: str) -> ET.Element:
+    """Create a <figure> element and write a 1x1 pixel JPEG at the expected path."""
+    (tmp_path / "images").mkdir(exist_ok=True)
+    img = Image.new("RGB", (4, 4), color=(128, 64, 32))
+    img.save(tmp_path / "images" / filename)
+    return _make_figure(img_src=f"images/{filename}")
+
+
 class TestFallbacks:
     def _make_classifier(self) -> FigureClassifier:
         """Instantiate FigureClassifier with the model loading mocked out."""
@@ -95,3 +106,76 @@ class TestFallbacks:
         label, confidence = result[figure]
         assert label == "unknown"
         assert confidence is None
+
+
+class TestBatchChunking:
+    def _make_classifier_with_spy(self, batch_size: int) -> FigureClassifier:
+        """Return a FigureClassifier whose _run_batch is replaced with a spy."""
+        with (
+            patch("src.figure_classifier.AutoProcessor.from_pretrained"),
+            patch("src.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
+        ):
+            mock_model = MagicMock()
+            mock_model.get_text_features.return_value = torch.zeros(10, 768)
+            mock_model_cls.return_value.to.return_value.eval.return_value = mock_model
+            clf = FigureClassifier(device="cpu", batch_size=batch_size)
+        clf._run_batch = MagicMock(side_effect=lambda paths: [("diagram", 0.9)] * len(paths))
+        return clf
+
+    def test_single_batch_when_few_images(self, tmp_path):
+        clf = self._make_classifier_with_spy(batch_size=32)
+        figs = [_make_figure_with_file(tmp_path, f"img_{i}.jpg") for i in range(5)]
+        clf.classify_figures(figs, img_root=tmp_path)
+        assert clf._run_batch.call_count == 1
+
+    def test_multiple_batches_when_many_images(self, tmp_path):
+        clf = self._make_classifier_with_spy(batch_size=4)
+        figs = [_make_figure_with_file(tmp_path, f"img_{i}.jpg") for i in range(10)]
+        clf.classify_figures(figs, img_root=tmp_path)
+        assert clf._run_batch.call_count == math.ceil(10 / 4)
+
+    def test_batch_sizes_are_correct(self, tmp_path):
+        clf = self._make_classifier_with_spy(batch_size=4)
+        figs = [_make_figure_with_file(tmp_path, f"img_{i}.jpg") for i in range(9)]
+        clf.classify_figures(figs, img_root=tmp_path)
+        call_lengths = [len(c.args[0]) for c in clf._run_batch.call_args_list]
+        assert call_lengths == [4, 4, 1]
+
+
+class TestXmlAttributesWritten:
+    def _classify_with_mock(
+        self,
+        figures: list[ET.Element],
+        img_root: Path,
+        label: str = "diagram",
+        conf: float = 0.9,
+    ) -> dict[ET.Element, tuple[str, float | None]]:
+        with (
+            patch("src.figure_classifier.AutoProcessor.from_pretrained"),
+            patch("src.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
+        ):
+            mock_model = MagicMock()
+            mock_model.get_text_features.return_value = torch.zeros(10, 768)
+            mock_model_cls.return_value.to.return_value.eval.return_value = mock_model
+            clf = FigureClassifier(device="cpu", batch_size=32)
+        clf._run_batch = MagicMock(side_effect=lambda paths: [(label, conf)] * len(paths))
+        return clf.classify_figures(figures, img_root=img_root)
+
+    def test_category_label_returned(self, tmp_path):
+        fig = _make_figure_with_file(tmp_path, "fig.jpg")
+        result = self._classify_with_mock([fig], tmp_path, label="diagram", conf=0.87)
+        assert result[fig][0] == "diagram"
+
+    def test_confidence_returned(self, tmp_path):
+        fig = _make_figure_with_file(tmp_path, "fig.jpg")
+        result = self._classify_with_mock([fig], tmp_path, label="screenshot", conf=0.923)
+        label, conf = result[fig]
+        assert label == "screenshot"
+        assert isinstance(conf, float)
+
+    def test_confidence_in_valid_range(self, tmp_path):
+        figs = [_make_figure_with_file(tmp_path, f"fig_{i}.jpg") for i in range(5)]
+        result = self._classify_with_mock(figs, tmp_path, label="map", conf=0.75)
+        for fig in figs:
+            _, conf = result[fig]
+            assert 0.0 <= conf <= 1.0
