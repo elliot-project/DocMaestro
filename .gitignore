@@ -10,4 +10,5 @@ output/
 lib/
 docs/superpowers/
 mineru_results/
-drafts/*.html
+drafts/
+.env/

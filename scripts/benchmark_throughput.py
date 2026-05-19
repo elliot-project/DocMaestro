@@ -28,6 +28,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 import torch
+
 import wandb
 
 matplotlib.use("Agg")
@@ -440,7 +441,7 @@ def main() -> None:
     std_spp  = float(np.std(all_spp))
     ppm      = 60.0 / mean_spp
 
-    print(f"\n── Aggregate Results ──────────────────────────────────────────")
+    print("\n── Aggregate Results ──────────────────────────────────────────")
     print(f"  Documents        : {len(pdfs)}  ×  {args.repeats} repeat(s)")
     print(f"  Total pages      : {total_pages}")
     print(f"  Wall-clock total : {total_wall:.1f}s")

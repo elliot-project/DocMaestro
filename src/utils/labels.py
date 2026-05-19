@@ -24,11 +24,11 @@ LABEL_REGISTRY: dict[str, list[str]] = {
         "A visual representation using connected nodes, blocks, and pathways.",
     ],
     "scientific-medical-image": [
-        "A cropped image from a document showing a scientific scan.",
-        "A medical imaging scan such as an X-ray, MRI, or ultrasound.",
-        "A specialized technical image from a microscope or scientific instrument.",
-        "An astronomical photograph or satellite remote sensing image.",
-        "A biomedical scan, histology slide, or scientific visual data.",
+        "A cropped image from a document showing a radiological medical scan, such as a grayscale X-ray, CT, or MRI.",
+        "A highly magnified microscopy image or colorful histology slide showing cellular structures and tissues.",
+        "A diagnostic biomedical scan, like an ultrasound, displaying organic internal anatomy in black and white.",
+        "A specialized scientific scan from laboratory equipment, such as a textured electron microscope image.",
+        "A false-color satellite rendering or deep space astronomical photograph captured by non-optical sensors."
     ],
     "illustration-artwork": [
         "A cropped image from a document showing a digital illustration.",
@@ -52,18 +52,18 @@ LABEL_REGISTRY: dict[str, list[str]] = {
         "A designed presentation slide or graphic summarizing information.",
     ],
     "logo-icon": [
-        "A cropped image from a document showing a company logo.",
-        "A small brand mark, institutional seal, or graphical badge.",
-        "A standalone corporate symbol or application icon on a plain background.",
-        "A vectorized or high-contrast graphic symbol representing a brand.",
-        "A small emblem, trademark, or decorative icon graphic.",
+        "An isolated company logo centered on a plain white background with no other elements.",
+        "A standalone graphic symbol or brand mark entirely surrounded by empty space.",
+        "A cropped document image consisting solely of a corporate logo on a solid, blank background.",
+        "An isolated icon, institutional seal, or emblem with no surrounding scenery or context.",
+        "A single vectorized corporate trademark isolated on a blank canvas."
     ],
     "map": [
-        "A cropped image from a document showing a map.",
-        "A geographic layout, street map, or topographic region.",
-        "An architectural floor plan or schematic showing spatial locations.",
-        "A visual representation of a geographical area or city layout.",
-        "A spatial map showing borders, roads, or geographical data.",
+        "A geographic map displaying landmasses, oceans, and country borders.",
+        "A street map for navigation showing roads, highways, and city blocks.",
+        "A cartographic topographic map illustrating geographical terrain and elevation.",
+        "A political map from an atlas highlighting countries, states, and geographic locations.",
+        "An architectural floor plan or building blueprint showing rooms, walls, and building layouts."
     ],
     "signature-handwriting": [
         "A cropped image from a document showing a handwritten signature.",
@@ -71,12 +71,5 @@ LABEL_REGISTRY: dict[str, list[str]] = {
         "A signature signed in pen on a document.",
         "A close-up of ink strokes forming handwritten words or initials.",
         "A manual handwritten annotation or sign-off.",
-    ],
-    "rasterized-table": [
-        "A cropped image from a document showing a data table.",
-        "A structured table with visible grid lines, rows, and columns.",
-        "A tabular layout containing aligned numbers and text categories.",
-        "An image of a spreadsheet grid with organized data cells.",
-        "A visual matrix of rows and columns formatting tabular data.",
-    ],
+    ]
 }
