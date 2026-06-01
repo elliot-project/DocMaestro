@@ -22,7 +22,7 @@ everything to disk for downstream consumption by LLMs, RAG systems, or evaluatio
 
 | Capability | Details |
 |------------|---------|
-| **Multi-backend extraction** | Pipeline (rule-based), VLM-Auto-Engine (in-process vLLM), Hybrid-Auto-Engine (in-process, best accuracy), Hybrid-HTTP-Client (connects to a running VLM server) |
+| **Multi-backend extraction** | Pipeline (rule-based), VLM-Auto-Engine (in-process vLLM), Hybrid-Auto-Engine (in-process, best accuracy), Hybrid-HTTP-Client (default; connects to a running VLM server via HTTP `--server-url`) |
 | **Rich content types** | Text paragraphs, titles (H1–H4), figures, tables (with HTML table body), charts, equations (LaTeX), code blocks, headers/footers, footnotes, page numbers, aside text |
 | **Bounding boxes everywhere** | Every content element in the XML carries a `bbox="[x1, y1, x2, y2]"` attribute in 0–1000 normalized page coordinates |
 | **Title hierarchy (H1–H4)** | Optional LLM-aided title-level labeling via any OpenAI-compatible endpoint (e.g., Qwen3-VL-8B-Instruct) |
@@ -49,7 +49,7 @@ Do not use `pip` directly.
 multi-GPU nodes, always set this to avoid vLLM contending with other jobs:
 
 ```bash
-CUDA_VISIBLE_DEVICES=6 uv run scripts/run_extraction.py ...
+CUDA_VISIBLE_DEVICES=6 uv run main.py --pdf data/pdfs/macdonals.pdf
 ```
 
 ---

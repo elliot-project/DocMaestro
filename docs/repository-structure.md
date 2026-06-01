@@ -6,24 +6,38 @@
 OmniDocParser/
 │
 ├── CLAUDE.md                       ← Project instructions for AI assistant
+├── main.py                         ← Primary orchestrator: PDF → extraction → XML → WandB
 ├── pyproject.toml                  ← Dependencies, Python version, Ruff config
 ├── uv.lock                         ← Locked dependency versions
 │
+├── configs/                        ← YAML configuration files
+│   └── extractor/
+│       ├── default.yaml            ← Default extraction config (hybrid-http-client)
+│       └── fast_img_cls.yaml       ← Config tuned for fast figure classification
+│
 ├── src/                            ← Core library modules
 │   ├── __init__.py
-│   ├── extractor.py                ← MinerU extraction wrapper
+│   ├── extractor.py                ← MinerU extraction wrapper (extract, batch_extract)
 │   ├── xml_formatter.py            ← content_list + middle_json → XML
-│   ├── xml_schema.py               ← Content-type → XML tag mapping
+│   ├── figure_classifier.py        ← SigLIP2 zero-shot figure classification
 │   ├── visualizer.py               ← All visualization renderers
-│   └── benchmark.py                ← WandB helpers
+│   └── utils/
+│       ├── __init__.py
+│       ├── benchmark.py            ← WandB helpers
+│       ├── config.py               ← PipelineConfig dataclasses + YAML loader
+│       ├── labels.py               ← LABEL_REGISTRY for figure classification
+│       └── xml_schema.py           ← Content-type → XML tag mapping
 │
 ├── scripts/                        ← Executable CLI scripts
-│   ├── run_extraction.py           ← Full pipeline: extract → XML → WandB
-│   ├── visualize.py                ← Standalone visualization
-│   └── benchmark_throughput.py    ← Throughput benchmark with GPU monitoring
+│   ├── benchmark_throughput.py     ← Throughput benchmark with GPU monitoring
+│   ├── classify_figures.py         ← Standalone figure enrichment (SigLIP2)
+│   ├── run_docvqa2026.py           ← DocVQA-2026 dataset sweep
+│   ├── run_sharded.py              ← Multi-GPU launcher (shards PDF list)
+│   └── visualize.py                ← Standalone visualization
 │
 ├── tests/                          ← pytest unit tests
 │   ├── __init__.py
+│   ├── test_figure_classifier.py   ← SigLIP2 classifier unit tests
 │   ├── test_xml_schema.py          ← Tag resolution + bbox formatting tests
 │   ├── test_xml_formatter.py       ← XML synthesis tests (all element types)
 │   └── test_visualizer.py          ← Tree building + DOM graph tests
@@ -46,28 +60,29 @@ OmniDocParser/
 │   │   ├── ASML.pdf
 │   │   └── ...
 │   ├── macdonals/                  ← Raw MinerU outputs for macdonals
-│   │   └── hybrid-auto-engine/
+│   │   └── hybrid-http-client/
 │   │       ├── macdonals_middle.json
 │   │       └── macdonals_content_list.json
 │   ├── ASML/
-│   │   └── hybrid-auto-engine/
+│   │   └── hybrid-http-client/
 │   │       └── ...
+│   ├── docvqa2026/                 ← DocVQA-2026 dataset documents
+│   │   ├── <doc_id>/
+│   │   │   ├── <doc_id>_<backend>.xml
+│   │   │   └── qa.json
+│   │   └── ...
 │   └── ...
 │
 ├── output/                         ← Pipeline outputs, organized per document
 │   ├── macdonals/
-│   │   ├── macdonals_hybrid-auto-engine.xml
 │   │   ├── macdonals_hybrid-http-client.xml
+│   │   ├── macdonals_hybrid-auto-engine.xml
 │   │   └── plots/
 │   │       ├── macdonals_document_tree.png
 │   │       ├── macdonals_dom_full.html
 │   │       ├── macdonals_page000_layout_bboxes.png
 │   │       ├── macdonals_page000_reading_order.png
 │   │       ├── macdonals_page000_dom.html
-│   │       └── ...
-│   ├── MinerU2_5Pro/
-│   │   ├── MinerU2_5Pro_hybrid-auto-engine.xml
-│   │   └── plots/
 │   │       └── ...
 │   └── plots/                      ← Global benchmark plots
 │       ├── *_latency.png
@@ -83,13 +98,20 @@ OmniDocParser/
 
 ## Module Reference
 
+### `main.py`
+
+| Symbol | Type | Purpose |
+|--------|------|---------|
+| `main()` | function | CLI entry point: parses args, loads YAML config, calls `batch_extract` or `extract`, writes XML, logs to WandB |
+
 ### `src/extractor.py`
 
 | Symbol | Type | Purpose |
 |--------|------|---------|
 | `SUPPORTED_BACKENDS` | `frozenset[str]` | The four valid backend identifiers |
 | `ExtractionResult` | dataclass | Parsed outputs from a single extraction run |
-| `extract()` | function | Main entry point: PDF → `ExtractionResult` |
+| `extract()` | function | Single-PDF entry point: PDF → `ExtractionResult` |
+| `batch_extract()` | function | Multi-PDF entry point: accepts list of PDFs, issues single `do_parse` call |
 | `_find_json_file()` | function | Recursively find newest JSON matching a suffix |
 | `_title_aided_patch()` | context manager | Temporarily patches MinerU for title hierarchy |
 | `_make_patched_request_title_levels()` | function | Robust JSON parser for LLM dict output |
@@ -109,7 +131,7 @@ OmniDocParser/
 | `_build_generic_text_element()` | function | All other text-bearing types |
 | `_clean()` | function | Strip XML-illegal control characters from text |
 
-### `src/xml_schema.py`
+### `src/utils/xml_schema.py`
 
 | Symbol | Type | Purpose |
 |--------|------|---------|
@@ -117,6 +139,27 @@ OmniDocParser/
 | `XMLTagConfig` | frozen dataclass | Resolved tag + extra_attrs for one element |
 | `resolve_tag()` | function | Resolve XML tag for any (type, text_level) pair |
 | `format_bbox()` | function | Format bbox list as `"[x1, y1, x2, y2]"` string |
+
+### `src/figure_classifier.py`
+
+| Symbol | Type | Purpose |
+|--------|------|---------|
+| `FigureClassifier` | class | Loads SigLIP2 model; exposes `classify_batch()` |
+| `classify_batch()` | method | Accepts list of PIL images + label set → scores dict |
+| `enrich_xml()` | function | Parse XML, run classification on `<figure>` elements, write `category` and `category_confidence` attributes |
+
+### `src/utils/labels.py`
+
+| Symbol | Type | Purpose |
+|--------|------|---------|
+| `LABEL_REGISTRY` | `dict[str, LabelMeta]` | Canonical label names + descriptions used as SigLIP2 prompts |
+
+### `src/utils/config.py`
+
+| Symbol | Type | Purpose |
+|--------|------|---------|
+| `PipelineConfig` | dataclass | Holds all extraction parameters parsed from YAML |
+| `load_config()` | function | Read `configs/extractor/*.yaml` → `PipelineConfig` |
 
 ### `src/visualizer.py`
 
@@ -135,7 +178,7 @@ OmniDocParser/
 | `_nx_to_d3_json()` | function | NetworkX DiGraph → nested D3 hierarchy dict |
 | `_write_d3_tree_html()` | function | Inject D3 data into HTML template |
 
-### `src/benchmark.py`
+### `src/utils/benchmark.py`
 
 | Symbol | Type | Purpose |
 |--------|------|---------|
@@ -160,9 +203,10 @@ uv run pytest tests/ -k "bbox" # filter by name
 
 | File | Coverage |
 |------|---------|
-| `tests/test_xml_schema.py` | `resolve_tag()` for all 14 content types; `format_bbox()` edge cases (None, empty, wrong length, float truncation) |
-| `tests/test_xml_formatter.py` | `build_document_xml()` for all element types; multi-page routing; bbox attribute format; XML-illegal character handling edge cases |
+| `tests/test_xml_schema.py` | `resolve_tag()` for all content types; `format_bbox()` edge cases (None, empty, wrong length, float truncation) |
+| `tests/test_xml_formatter.py` | `build_document_xml()` for all element types; multi-page routing; bbox attribute format; XML-illegal character handling |
 | `tests/test_visualizer.py` | `build_doc_tree()` tree structure; skipped heading levels; `_count_leaves()`; `_flatten_tree_for_render()` depth and truncation; `_build_networkx_graph()` node structure, cluster/typegroup hierarchy; `draw_dom_graph_viz()` HTML output |
+| `tests/test_figure_classifier.py` | SigLIP2 classifier unit tests; `enrich_xml()` attribute injection |
 
 All tests use pure Python fixtures with no PDF files — unit tests only, no integration tests
 that call MinerU.
@@ -172,7 +216,7 @@ that call MinerU.
 ## Coding Standards
 
 ### Python version
-Python 3.10–3.13. The codebase uses `|` union types (`Path | None`) which require ≥ 3.10.
+Python 3.10–3.13. The codebase uses `|` union types (`Path | None`) which require >= 3.10.
 
 ### Package management
 Always use `uv`:
@@ -219,24 +263,20 @@ Use absolute paths (`Path(__file__).resolve().parents[N]`) for script-relative i
 cp my_doc.pdf data/pdfs/
 
 # 2. Run extraction
-CUDA_VISIBLE_DEVICES=6 uv run scripts/run_extraction.py \
-  --pdf data/pdfs/my_doc.pdf \
-  --backend hybrid-auto-engine
+uv run main.py --pdf data/pdfs/my_doc.pdf
 
 # 3. Visualize
-uv run scripts/visualize.py \
-  --pdf data/pdfs/my_doc.pdf \
-  --dom
+uv run scripts/visualize.py --doc my_doc
 ```
 
 This creates:
 ```
-data/my_doc/hybrid-auto-engine/
+data/my_doc/hybrid-http-client/
   my_doc_middle.json
   my_doc_content_list.json
 
 output/my_doc/
-  my_doc_hybrid-auto-engine.xml
+  my_doc_hybrid-http-client.xml
   plots/
     my_doc_document_tree.png
     my_doc_dom_full.html

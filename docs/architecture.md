@@ -46,12 +46,18 @@
 |--------|----------|----------------|
 | `extractor` | `src/extractor.py` | Wraps MinerU's `do_parse()` API; handles all four backends; manages title-aided LLM patching; returns `ExtractionResult` |
 | `xml_formatter` | `src/xml_formatter.py` | Converts `content_list` + `middle_json` → pretty-printed XML string |
-| `xml_schema` | `src/xml_schema.py` | Maps MinerU content types to XML tags; formats bounding boxes |
+| `xml_schema` | `src/utils/xml_schema.py` | Maps MinerU content types to XML tags; formats bounding boxes |
 | `visualizer` | `src/visualizer.py` | Renders layout-bbox PNGs, reading-order PNGs, document tree PNGs, and interactive D3 DOM HTML files |
-| `benchmark` | `src/benchmark.py` | WandB helpers: `init_run`, `log_extraction_metrics`, `log_gpu_memory`, `log_xml_stats` |
-| `run_extraction` | `scripts/run_extraction.py` | CLI orchestrator: PDF → extraction → XML → WandB logging |
+| `benchmark` | `src/utils/benchmark.py` | WandB helpers: `init_run`, `log_extraction_metrics`, `log_gpu_memory`, `log_xml_stats` |
+| `figure_classifier` | `src/figure_classifier.py` | SigLIP2 zero-shot figure classification; enriches `<figure>` XML elements with `category` and `category_confidence` attributes |
+| `labels` | `src/utils/labels.py` | `LABEL_REGISTRY` — canonical label set and metadata for figure classification |
+| `config` | `src/utils/config.py` | `PipelineConfig` dataclasses and YAML loader for `configs/extractor/*.yaml` |
+| `main` | `main.py` | Primary orchestrator: PDF/dir → extraction → XML → WandB logging; supports batching and YAML config |
 | `visualize` | `scripts/visualize.py` | CLI for standalone visualization of already-extracted documents |
 | `benchmark_throughput` | `scripts/benchmark_throughput.py` | Throughput benchmark with GPU monitoring and scale-projection plots |
+| `run_docvqa2026` | `scripts/run_docvqa2026.py` | DocVQA-2026 dataset sweep: download, convert, extract, save XML + qa.json |
+| `run_sharded` | `scripts/run_sharded.py` | Multi-GPU launcher: splits PDF list into shards, one `main.py` subprocess per GPU |
+| `classify_figures` | `scripts/classify_figures.py` | Standalone figure enrichment: load XML, run SigLIP2, write `category` attributes |
 
 ---
 
@@ -182,19 +188,35 @@ Page dimensions in `middle.json` are in PDF points (72 pts/inch). The visualizer
 ## Dependency Graph
 
 ```
-scripts/run_extraction.py
+main.py
   └── src/extractor.py           ← mineru, vllm (heavy deps, lazy imported)
   └── src/xml_formatter.py
-      └── src/xml_schema.py
-  └── src/benchmark.py           ← wandb
+      └── src/utils/xml_schema.py
+  └── src/utils/benchmark.py     ← wandb
+  └── src/utils/config.py        ← PipelineConfig, YAML loader
 
 scripts/visualize.py
   └── src/visualizer.py          ← matplotlib, networkx, pypdfium2, d3 (CDN)
 
 scripts/benchmark_throughput.py
   └── src/extractor.py
-  └── src/benchmark.py
+  └── src/utils/benchmark.py
   └── matplotlib
+
+scripts/classify_figures.py
+  └── src/figure_classifier.py   ← transformers (SigLIP2)
+  └── src/utils/labels.py
+
+scripts/run_docvqa2026.py
+  └── main.py (subprocess or direct call)
+
+scripts/run_sharded.py
+  └── main.py (subprocess per GPU shard)
+
+configs/
+  └── extractor/
+      └── default.yaml
+      └── fast_img_cls.yaml
 ```
 
 MinerU and vLLM are **lazily imported** inside `extractor.py`. This means importing

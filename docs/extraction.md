@@ -2,9 +2,9 @@
 
 ## Overview
 
-`src/extractor.py` is the single interface between OmniDocParser and MinerU. It exposes one
-public function — `extract()` — that wraps MinerU's `do_parse()` Python API, reads the
-resulting JSON files from disk, and returns a structured `ExtractionResult`.
+`src/extractor.py` is the single interface between OmniDocParser and MinerU. It exposes two
+public functions — `extract()` and `batch_extract()` — that wrap MinerU's `do_parse()` Python
+API, read the resulting JSON files from disk, and return structured `ExtractionResult` objects.
 
 ---
 
@@ -14,7 +14,7 @@ Four backends are supported. The right choice depends on your infrastructure:
 
 | Backend | How it works | When to use |
 |---------|-------------|-------------|
-| `hybrid-http-client` | Connects to a **running VLM server** (e.g., started with `mineru-serve`). Sends page images over HTTP. | Production. Keeps model warm between runs. Lowest per-call overhead. Requires `--server-url`. |
+| `hybrid-http-client` | **Default.** Connects to a **running VLM server** (e.g., started with `mineru-serve`). Sends page images over HTTP to `--server-url`. | Production. Keeps model warm between runs. Lowest per-call overhead. Requires `--server-url`. |
 | `hybrid-auto-engine` | Loads the **VLM in-process** via vLLM on first call. Model stays in VRAM for the process lifetime. | Single-machine research. No server setup needed. |
 | `vlm-auto-engine` | Pure VLM mode; loads VLM in-process. | Experimentation. Lower accuracy than hybrid on complex layouts. |
 | `pipeline` | Rule-based, **no VLM**. Uses classical CV for layout detection and Tesseract-style OCR. | CPU-only fallback. Fast but lower quality. |
@@ -69,6 +69,48 @@ Returns an `ExtractionResult` dataclass with fields: `content_list`, `middle_jso
 | `ValueError` | `backend` not in `SUPPORTED_BACKENDS`; malformed `title_aided_config` |
 | `FileNotFoundError` | `pdf_path` does not exist |
 | `RuntimeError` | MinerU produced no output files (extraction failed silently) |
+
+---
+
+## The `batch_extract()` Function
+
+`batch_extract()` accepts a list of PDF paths and issues a **single `do_parse` call** for
+pipeline-level batching. This is more efficient than calling `extract()` in a loop when using
+the `pipeline` backend, because MinerU can schedule pages from multiple documents in one pass.
+
+```python
+from src.extractor import batch_extract
+from pathlib import Path
+
+results = batch_extract(
+    pdf_paths=[Path("data/pdfs/a.pdf"), Path("data/pdfs/b.pdf")],
+    output_dir=Path("data/batch_out"),
+    backend="pipeline",
+    batch_size=4,
+    window_size=64,
+)
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `pdf_paths` | `list[Path]` | required | List of PDF paths to process in a single batch |
+| `output_dir` | `Path` | required | Directory for MinerU's raw JSON output |
+| `backend` | `str` | `"hybrid-http-client"` | One of the four backend identifiers |
+| `batch_size` | `int` | `1` | Documents per `do_parse` call. Set `>1` with the `pipeline` backend for GPU batching |
+| `window_size` | `int` | `64` | MinerU page processing window. Sets the `MINERU_PROCESSING_WINDOW_SIZE` environment variable |
+| `**kwargs` | — | — | Forwarded to `extract()` for each document (e.g. `language`, `server_url`) |
+
+### Return Value
+
+Returns a `list[ExtractionResult]`, one per input PDF, in the same order as `pdf_paths`.
+
+### Environment Variable
+
+`MINERU_PROCESSING_WINDOW_SIZE` (default `64`) controls how many pages MinerU processes in
+each internal window. Lower values reduce peak memory; higher values improve GPU utilization
+on long documents. Controlled via `--window-size` in `main.py`.
 
 ---
 

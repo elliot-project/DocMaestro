@@ -238,7 +238,7 @@ directories as needed.
 
 ---
 
-## Implementation: `src/xml_schema.py`
+## Implementation: `src/utils/xml_schema.py`
 
 ### `resolve_tag(content_type, text_level) → XMLTagConfig`
 

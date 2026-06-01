@@ -1,186 +1,185 @@
 # CLI Reference
 
-All scripts are run via `uv run scripts/<script>.py`. Three scripts cover the full pipeline.
+All scripts are run via `uv run`. The primary entry point is `main.py`; the `scripts/`
+directory holds specialized runners for benchmarking, dataset sweeps, multi-GPU sharding,
+figure enrichment, and standalone visualization.
 
 ---
 
-## `scripts/run_extraction.py`
+## `main.py`
 
-**Purpose:** Full pipeline — PDF → MinerU extraction → XML synthesis → WandB logging.
-
-```
-usage: run_extraction.py [-h] --pdf PDF
-                         [--backend {hybrid-auto-engine,hybrid-http-client,pipeline,vlm-auto-engine}]
-                         [--server-url SERVER_URL]
-                         [--lang LANG]
-                         [--start-page START_PAGE] [--end-page END_PAGE]
-                         [--data-dir DATA_DIR] [--output-dir OUTPUT_DIR]
-                         [--title-aided-api-key KEY]
-                         [--title-aided-base-url URL]
-                         [--title-aided-model MODEL]
-                         [--title-aided-enable-thinking]
-```
-
-### Required Arguments
-
-| Flag | Type | Description |
-|------|------|-------------|
-| `--pdf` | path | Path to a single PDF file, or a directory of PDFs. When a directory is given, all `*.pdf` files are processed in sorted order. |
-
-### Core Extraction Options
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--backend` | `hybrid-http-client` | MinerU inference backend. |
-| `--server-url` | `None` | VLM server base URL, e.g. `http://localhost:8000`. **Required** when `--backend hybrid-http-client`. |
-| `--lang` | `en` | OCR language hint (`en`, `ch`, `ja`, etc.). |
-| `--start-page` | `0` | Zero-based first page index. |
-| `--end-page` | `None` (all) | Zero-based last page index (inclusive). |
-
-### Directory Options
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--data-dir` | `data/` | Root directory for raw MinerU JSON outputs. Outputs go to `<data-dir>/<doc_name>/<backend>/`. |
-| `--output-dir` | `output/` | Root directory for synthesized XML. XML files go to `<output-dir>/<doc_name>/`. |
-
-### Title-Aided Options
-
-All three `--title-aided-*` flags must be provided together, or none.
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--title-aided-api-key` | `None` | API key for the LLM endpoint. Use `"dummy"` for local servers. |
-| `--title-aided-base-url` | `None` | OpenAI-compatible LLM base URL, e.g. `http://localhost:8000/v1`. |
-| `--title-aided-model` | `None` | Model name, e.g. `Qwen/Qwen3-VL-8B-Instruct`. |
-| `--title-aided-enable-thinking` | `False` | Pass `enable_thinking=True` to the LLM endpoint. Required for Qwen3-Thinking models. |
-
-### Examples
-
-```bash
-# Basic extraction with HTTP client backend
-uv run scripts/run_extraction.py \
-  --pdf data/pdfs/macdonals.pdf \
-  --backend hybrid-http-client \
-  --server-url http://localhost:8000
-
-# In-process VLM, pages 0-9 only
-CUDA_VISIBLE_DEVICES=6 uv run scripts/run_extraction.py \
-  --pdf data/pdfs/macdonals.pdf \
-  --backend hybrid-auto-engine \
-  --start-page 0 --end-page 9
-
-# Batch: all PDFs in data/pdfs/
-CUDA_VISIBLE_DEVICES=6 uv run scripts/run_extraction.py \
-  --pdf data/pdfs/ \
-  --backend hybrid-auto-engine
-
-# With title-aided H1–H4 detection
-CUDA_VISIBLE_DEVICES=6 uv run scripts/run_extraction.py \
-  --pdf data/pdfs/macdonals.pdf \
-  --backend hybrid-auto-engine \
-  --title-aided-api-key dummy \
-  --title-aided-base-url http://localhost:8000/v1 \
-  --title-aided-model Qwen/Qwen3-VL-8B-Instruct
-```
-
-### Outputs
-
-For each processed PDF:
-- `data/<doc_name>/<backend>/<doc_name>_middle.json` — raw MinerU topology JSON
-- `data/<doc_name>/<backend>/<doc_name>_content_list.json` — raw semantic list JSON
-- `output/<doc_name>/<doc_name>_<backend>.xml` — synthesized XML
-- WandB artifact: `<doc_name>-<backend>` (type: `document-xml`)
-
----
-
-## `scripts/visualize.py`
-
-**Purpose:** Generate visualizations for an already-extracted document. Does not re-run
-MinerU — reads from the JSON files written by `run_extraction.py`.
+**Purpose:** Primary orchestrator — PDF or directory → MinerU extraction → XML synthesis →
+WandB logging.
 
 ```
-usage: visualize.py [-h] --pdf PDF
-                    [--backend BACKEND]
-                    [--pages [PAGES ...]]
-                    [--data-dir DATA_DIR]
-                    [--output-dir OUTPUT_DIR]
-                    [--dom]
+usage: main.py [-h] [--pdf PATH_OR_DIR] [--config YAML]
+               [--batch-size N] [--window-size N] [--no-wandb]
 ```
 
 ### Arguments
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--pdf` | required | Path to the source PDF (must exist on disk for page rendering). |
-| `--backend` | auto-detect | Backend subdirectory to load JSON from. If omitted, searches for any `<doc_name>_content_list.json` under `<data-dir>/<doc_name>/`. |
-| `--pages` | first 3 with content | Space-separated list of page indices to visualize. |
-| `--data-dir` | `data/` | Root directory for extracted JSON. |
-| `--output-dir` | `output/` | Root directory for visualization outputs. |
-| `--dom` | `False` | Also generate interactive DOM graph HTML files. |
-
-### Data Discovery
-
-Without `--backend`, the script searches `<data-dir>/<doc_name>/` recursively for
-`<doc_name>_content_list.json`. It first checks the canonical path
-(`<data-dir>/<doc_name>/hybrid-auto-engine/<doc_name>_content_list.json`) before falling back
-to a recursive search.
+| `--pdf` | `data/pdfs/` | Path to a single PDF file or a directory of PDFs. When omitted, defaults to `data/pdfs/`. When a directory is given, all `*.pdf` files are processed in sorted order. |
+| `--config` | `configs/extractor/default.yaml` | YAML config file. Controls backend, `server_url`, `gpu_memory_utilization`, title-aided settings, and other extraction parameters. |
+| `--batch-size` | `1` | Documents per `do_parse` call. Set `>1` with the `pipeline` backend to enable GPU batching across multiple documents. |
+| `--window-size` | `64` | MinerU page processing window. Sets `MINERU_PROCESSING_WINDOW_SIZE`. Lower values reduce peak memory; higher values improve GPU utilization on long documents. |
+| `--no-wandb` | `False` | Disable WandB logging for this run. |
 
 ### Examples
 
 ```bash
-# Visualize first 3 pages (default), auto-detect backend
-uv run scripts/visualize.py --pdf data/pdfs/macdonals.pdf
+# Single PDF with default config (hybrid-http-client backend)
+uv run main.py --pdf data/pdfs/macdonals.pdf
 
-# Specific pages + DOM HTML
-uv run scripts/visualize.py \
-  --pdf data/pdfs/macdonals.pdf \
-  --pages 0 1 5 10 \
-  --dom
+# Specify a YAML config
+uv run main.py --pdf data/pdfs/macdonals.pdf --config configs/extractor/default.yaml
 
-# From a specific backend's output
-uv run scripts/visualize.py \
-  --pdf data/pdfs/macdonals.pdf \
-  --backend pipeline \
-  --pages 0 1 2
+# All PDFs in a directory, pipeline backend, batch size 4
+uv run main.py --pdf data/pdfs/ --batch-size 4
+
+# Reduce page window to lower memory pressure
+uv run main.py --pdf data/pdfs/macdonals.pdf --window-size 32
+
+# Disable WandB
+uv run main.py --pdf data/pdfs/macdonals.pdf --no-wandb
+```
+
+### Config File
+
+`configs/extractor/default.yaml` is the standard config. Fields map directly to `extract()`
+parameters. Example structure:
+
+```yaml
+backend: hybrid-http-client
+server_url: http://localhost:8000
+gpu_memory_utilization: 0.75
+language: en
+title_aided: null
 ```
 
 ### Outputs
 
-For each requested page: `output/<doc_name>/plots/<doc>_page<NNN>_layout_bboxes.png`
-and `output/<doc_name>/plots/<doc>_page<NNN>_reading_order.png`.
+For each processed PDF:
+- `data/<doc_name>/<backend>/<doc_name>_middle.json`
+- `data/<doc_name>/<backend>/<doc_name>_content_list.json`
+- `output/<doc_name>/<doc_name>_<backend>.xml`
+- WandB artifact: `<doc_name>-<backend>` (type: `document-xml`)
 
-Always: `output/<doc_name>/plots/<doc>_document_tree.png`.
+---
 
-With `--dom`: `output/<doc_name>/plots/<doc>_dom_full.html` and
-`output/<doc_name>/plots/<doc>_page<NNN>_dom.html` for each requested page.
+## `scripts/run_docvqa2026.py`
+
+**Purpose:** DocVQA-2026 dataset sweep — downloads the VLR-CVC/DocVQA-2026 dataset (val +
+test splits), converts image-format documents to PDF, runs batched extraction on every
+document, and saves XML + `qa.json` per document.
+
+```
+usage: run_docvqa2026.py [-h]
+                         [--backend BACKEND]
+                         [--batch-size N]
+                         [--window-size N]
+                         [--gpu-memory-utilization F]
+                         [--server-url URL]
+                         [--limit N]
+                         [--no-resume]
+                         [--no-wandb]
+```
+
+### Arguments
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--backend` | `hybrid-http-client` | MinerU backend for extraction. |
+| `--batch-size` | `1` | Documents per `do_parse` call. |
+| `--window-size` | `64` | MinerU page processing window (`MINERU_PROCESSING_WINDOW_SIZE`). |
+| `--gpu-memory-utilization` | `0.75` | vLLM KV-cache VRAM fraction. |
+| `--server-url` | `None` | VLM server URL. Required when `--backend hybrid-http-client`. |
+| `--limit` | `None` | Process only the first N documents (useful for debugging). |
+| `--no-resume` | `False` | Disable resume mode. By default, documents whose XML already exists are skipped. |
+| `--no-wandb` | `False` | Disable WandB logging. |
+
+### Resume Mode
+
+By default the script skips any document whose output XML already exists under
+`data/docvqa2026/<doc_id>/`. Pass `--no-resume` to force re-extraction of all documents.
+
+### Outputs
+
+For each document:
+- `data/docvqa2026/<doc_id>/<doc_id>_<backend>.xml`
+- `data/docvqa2026/<doc_id>/qa.json` — question/answer pairs from the dataset
+
+### Examples
+
+```bash
+# Full sweep with HTTP client backend
+uv run scripts/run_docvqa2026.py \
+  --backend hybrid-http-client \
+  --server-url http://localhost:8000
+
+# Debug: first 10 docs only, no WandB
+uv run scripts/run_docvqa2026.py --limit 10 --no-wandb
+```
+
+---
+
+## `scripts/run_sharded.py`
+
+**Purpose:** Multi-GPU launcher — splits the PDF list into N equal shards and launches one
+`main.py` subprocess per GPU with `CUDA_VISIBLE_DEVICES` set to the corresponding device.
+All runs share a WandB group for aggregated tracking.
+
+```
+usage: run_sharded.py [-h] --gpus N
+                      [--pdf PATH]
+                      [--config YAML]
+                      [--batch-size N]
+                      [--no-wandb]
+```
+
+### Arguments
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--gpus` | required | Number of GPUs. Each GPU receives one shard; GPUs are numbered `0` to `N-1`. |
+| `--pdf` | `data/pdfs/` | Path to a directory of PDFs to shard across GPUs. |
+| `--config` | `configs/extractor/default.yaml` | YAML config passed to each `main.py` subprocess. |
+| `--batch-size` | `1` | Batch size forwarded to each `main.py` shard. |
+| `--no-wandb` | `False` | Disable WandB logging for all shards. |
+
+### Examples
+
+```bash
+# Split data/pdfs/ across 4 GPUs
+uv run scripts/run_sharded.py --gpus 4
+
+# Custom PDF directory, 2 GPUs, batch size 2
+uv run scripts/run_sharded.py --gpus 2 --pdf data/pdfs/ --batch-size 2
+```
 
 ---
 
 ## `scripts/benchmark_throughput.py`
 
 **Purpose:** Measure steady-state per-page extraction throughput with GPU monitoring and
-scale-projection plots.
+scale-projection plots. Performs a 3-page warm-up pass (not recorded), then runs background
+GPU monitoring via `nvidia-smi` at 0.5 s poll intervals during the benchmark.
 
 ```
 usage: benchmark_throughput.py [-h]
-                               (--pdf PDF | --pdf-dir PDF_DIR)
-                               [--backend BACKEND]
-                               [--gpu-memory-utilization FLOAT]
-                               [--repeats N]
-                               [--data-dir DATA_DIR]
+                                [--backend BACKEND]
+                                [--pdf PATH]
+                                [--no-wandb]
 ```
 
 ### Arguments
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--pdf` | — | Single PDF to benchmark (mutually exclusive with `--pdf-dir`). |
-| `--pdf-dir` | — | Directory of PDFs (mutually exclusive with `--pdf`). All `*.pdf` files ≤ 30 MB are included. |
 | `--backend` | `hybrid-auto-engine` | MinerU backend to benchmark. |
-| `--gpu-memory-utilization` | `0.85` | vLLM KV-cache VRAM fraction. Recommended: `0.75` on 44 GB A100. |
-| `--repeats` | `1` | Number of full passes over the document set (for statistical averaging). |
-| `--data-dir` | `data/` | Root directory for MinerU JSON outputs. |
+| `--pdf` | `data/pdfs/` | Single PDF or directory of PDFs to benchmark. |
+| `--no-wandb` | `False` | Disable WandB logging. |
 
 ### Warm-Up Behavior
 
@@ -189,44 +188,120 @@ timing is **not** recorded. After warm-up completes, the full benchmark begins.
 
 ### GPU Monitoring
 
-`CUDA_VISIBLE_DEVICES` must be set to the GPU you want to benchmark. The monitor reads the
-physical GPU index from this environment variable:
+Set `CUDA_VISIBLE_DEVICES` to the GPU you want to benchmark:
 
 ```bash
-# Benchmark on GPU 6
-CUDA_VISIBLE_DEVICES=6 uv run scripts/benchmark_throughput.py --pdf-dir data/pdfs/
-```
-
-### Examples
-
-```bash
-# Multi-document benchmark, GPU 6, 0.75 memory utilization
-CUDA_VISIBLE_DEVICES=6 uv run scripts/benchmark_throughput.py \
-  --pdf-dir data/pdfs/ \
-  --backend hybrid-auto-engine \
-  --gpu-memory-utilization 0.75 \
-  --repeats 1
-
-# Single PDF, 3 repeats for statistical significance
-CUDA_VISIBLE_DEVICES=6 uv run scripts/benchmark_throughput.py \
-  --pdf data/pdfs/macdonals.pdf \
-  --backend hybrid-auto-engine \
-  --repeats 3
-
-# Pipeline backend (CPU-only, no CUDA needed)
-uv run scripts/benchmark_throughput.py \
-  --pdf-dir data/pdfs/ \
-  --backend pipeline
+CUDA_VISIBLE_DEVICES=6 uv run scripts/benchmark_throughput.py --backend hybrid-auto-engine
 ```
 
 ### Outputs
 
-Plots saved to `output/plots/`:
+Three plots saved to `output/plots/`:
 - `<tag>_latency.png` — per-document latency bar chart
 - `<tag>_gpu_util.png` — GPU utilization timeline
 - `<tag>_scale_projection.png` — log-log scale projection (1K–1B pages, 1/4/8/16 GPUs)
 
-Console output: per-document timing and aggregate results (median/mean s/page, pages/min,
-GPU utilization stats).
+WandB run logged to `mineru-xml-pipeline` with benchmark configuration and aggregate metrics.
 
-WandB run: logged to `mineru-xml-pipeline` with benchmark configuration and aggregate metrics.
+### Examples
+
+```bash
+# Multi-document benchmark on GPU 6
+CUDA_VISIBLE_DEVICES=6 uv run scripts/benchmark_throughput.py \
+  --backend hybrid-auto-engine
+
+# Pipeline backend (CPU-only, no CUDA needed)
+uv run scripts/benchmark_throughput.py --backend pipeline --no-wandb
+```
+
+---
+
+## `scripts/classify_figures.py`
+
+**Purpose:** Figure enrichment — loads an existing XML file, runs SigLIP2 zero-shot
+classification on all `<figure>` elements, and writes `category` and `category_confidence`
+attributes back into the XML in place.
+
+```
+usage: classify_figures.py [-h] --xml PATH
+                            [--img-root DIR]
+                            [--batch-size N]
+```
+
+### Arguments
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--xml` | required | Path to the XML file to enrich. Modified in place. |
+| `--img-root` | inferred from XML path | Directory that contains the figure images referenced by `<img src="..."/>` elements. Defaults to the parent directory of the XML file. |
+| `--batch-size` | `16` | Number of images to classify per SigLIP2 forward pass. |
+
+### Outputs
+
+The XML file at `--xml` is updated in place. Each `<figure>` element gains two new
+attributes:
+
+```xml
+<figure bbox="[62, 200, 940, 500]" category="bar_chart" category_confidence="0.923">
+  ...
+</figure>
+```
+
+Categories come from `LABEL_REGISTRY` in `src/utils/labels.py`.
+
+### Examples
+
+```bash
+# Enrich figures in an extracted XML
+uv run scripts/classify_figures.py \
+  --xml output/macdonals/macdonals_hybrid-http-client.xml
+
+# Custom image root and batch size
+uv run scripts/classify_figures.py \
+  --xml output/macdonals/macdonals_hybrid-http-client.xml \
+  --img-root data/macdonals/hybrid-http-client/ \
+  --batch-size 32
+```
+
+---
+
+## `scripts/visualize.py`
+
+**Purpose:** Generate visualizations for an already-extracted document. Does not re-run
+MinerU — reads from the JSON files written by `main.py`.
+
+```
+usage: visualize.py [-h] --doc DOC_ID
+                    [--backend BACKEND]
+```
+
+### Arguments
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--doc` | required | Document ID (stem of the PDF filename, e.g. `macdonals`). The script reads JSON from `data/<doc_id>/<backend>/`. |
+| `--backend` | auto-detect | Backend subdirectory to load JSON from. If omitted, searches for any `<doc_id>_content_list.json` under `data/<doc_id>/`. |
+
+### Data Discovery
+
+Without `--backend`, the script checks the canonical path
+(`data/<doc_id>/hybrid-http-client/<doc_id>_content_list.json`) first, then falls back to a
+recursive search under `data/<doc_id>/`.
+
+### Outputs
+
+- `output/<doc_id>/plots/<doc>_page<NNN>_layout_bboxes.png` — per page
+- `output/<doc_id>/plots/<doc>_page<NNN>_reading_order.png` — per page
+- `output/<doc_id>/plots/<doc>_document_tree.png` — full document
+- `output/<doc_id>/plots/<doc>_dom_full.html` — interactive D3 DOM (full doc)
+- `output/<doc_id>/plots/<doc>_page<NNN>_dom.html` — interactive D3 DOM (per page)
+
+### Examples
+
+```bash
+# Visualize macdonals (auto-detect backend)
+uv run scripts/visualize.py --doc macdonals
+
+# Specify backend
+uv run scripts/visualize.py --doc macdonals --backend pipeline
+```
