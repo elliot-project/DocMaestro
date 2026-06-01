@@ -49,6 +49,20 @@ class TestNoSamples:
         samples = ReadingOrderComposer(n_elements=5, seed=0).compose_page(page, ctx)
         assert samples == []
 
+    def test_page_number_and_abandon_excluded_from_eligible(self, tmp_path):
+        page = ET.Element("page", {"idx": "0", "width": "600", "height": "800"})
+        for i in range(3):
+            tb = ET.SubElement(page, "text-block")
+            tb.text = f"text {i}"
+        pn = ET.SubElement(page, "page-number")
+        pn.text = "1"
+        ab = ET.SubElement(page, "abandon")
+        ab.text = "watermark"
+        ctx = _make_context([page], tmp_path)
+        # Only 3 eligible elements — page-number and abandon are not counted
+        samples = ReadingOrderComposer(n_elements=5, seed=0).compose_page(page, ctx)
+        assert samples == []
+
 
 class TestSampleStructure:
     def test_one_sample_per_eligible_page(self, tmp_path):
