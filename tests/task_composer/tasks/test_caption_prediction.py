@@ -6,7 +6,6 @@ import warnings
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-import pytest
 from PIL import Image
 
 from src.task_composer.base import DocumentContext
@@ -228,6 +227,18 @@ class TestImageHandling:
         cap.text = "No image figure"
         page = _make_page(elements=[fig])
         ctx = _make_context([page], tmp_path)
+        samples = CaptionPredictionComposer().compose_page(page, ctx)
+        assert len(samples) == 1
+        assert "image.jpg" not in samples[0].payload
+
+    def test_image_omitted_when_img_src_is_empty(self, tmp_path):
+        fig = ET.Element("figure", {"bbox": "[0,0,100,100]"})
+        img = ET.SubElement(fig, "img")  # <img/> with no src attribute
+        cap = ET.SubElement(fig, "caption")
+        cap.text = "empty src figure"
+        page = _make_page(elements=[fig])
+        ctx = _make_context([page], tmp_path)
+        # Should not raise IsADirectoryError — empty src is silently skipped
         samples = CaptionPredictionComposer().compose_page(page, ctx)
         assert len(samples) == 1
         assert "image.jpg" not in samples[0].payload

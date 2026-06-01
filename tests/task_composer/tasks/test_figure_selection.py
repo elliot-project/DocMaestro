@@ -5,8 +5,6 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-import pytest
-
 from src.task_composer.base import DocumentContext
 from src.task_composer.tasks.figure_selection import FigureSelectionComposer
 
@@ -90,16 +88,17 @@ class TestSampleStructure:
         pages, ctx = self._make_multi_page_doc(tmp_path)
         composer = FigureSelectionComposer(n_distractors=2, seed=0)
         samples = composer.compose_page(pages[0], ctx)
-        meta = samples[0].payload["json"]
-        label = meta["label"]
-        assert 0 <= label < len(meta["candidates"])
+        label = samples[0].payload["target.json"]["label"]
+        candidates = samples[0].payload["json"]["candidates"]
+        assert 0 <= label < len(candidates)
 
     def test_correct_candidate_has_page_origin_matching_current_page(self, tmp_path):
         pages, ctx = self._make_multi_page_doc(tmp_path)
         composer = FigureSelectionComposer(n_distractors=2, seed=0)
         samples = composer.compose_page(pages[0], ctx)
-        meta = samples[0].payload["json"]
-        correct = meta["candidates"][meta["label"]]
+        label = samples[0].payload["target.json"]["label"]
+        candidates = samples[0].payload["json"]["candidates"]
+        correct = candidates[label]
         assert correct["page_origin"] == 0
         assert correct["src"] == "images/p0.jpg"
 
@@ -107,11 +106,12 @@ class TestSampleStructure:
         pages, ctx = self._make_multi_page_doc(tmp_path)
         composer = FigureSelectionComposer(n_distractors=2, seed=0)
         samples = composer.compose_page(pages[0], ctx)
-        meta = samples[0].payload["json"]
+        label = samples[0].payload["target.json"]["label"]
+        candidates = samples[0].payload["json"]["candidates"]
         distractor_origins = [
             c["page_origin"]
-            for i, c in enumerate(meta["candidates"])
-            if i != meta["label"]
+            for i, c in enumerate(candidates)
+            if i != label
         ]
         assert all(o != 0 for o in distractor_origins)
 
@@ -163,4 +163,4 @@ class TestDeterminism:
         _, ctx = _make_doc(pages, tmp_path)
         s1 = FigureSelectionComposer(n_distractors=2, seed=42).compose_page(pages[0], ctx)
         s2 = FigureSelectionComposer(n_distractors=2, seed=42).compose_page(pages[0], ctx)
-        assert s1[0].payload["json"]["label"] == s2[0].payload["json"]["label"]
+        assert s1[0].payload["target.json"]["label"] == s2[0].payload["target.json"]["label"]

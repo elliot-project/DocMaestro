@@ -92,12 +92,12 @@ class FigureSelectionComposer(BaseTaskComposer):
             payload: dict[str, Any] = {
                 "__key__": key,
                 "input.txt": page_text,
+                "target.json": {"label": label},
                 "json": {
                     "task_type": self.task_name,
                     "doc_name": context.doc_name,
                     "page_idx": page_idx,
                     "candidates": candidates,
-                    "label": label,
                 },
             }
 

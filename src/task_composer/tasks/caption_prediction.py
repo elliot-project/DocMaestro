@@ -97,14 +97,15 @@ class CaptionPredictionComposer(BaseTaskComposer):
             img_el = elem.find("img")
             if img_el is not None:
                 img_src = img_el.attrib.get("src", "")
-                img_path = context.img_root / img_src
-                if img_path.exists():
-                    payload["image.jpg"] = img_path.read_bytes()
-                else:
-                    warnings.warn(
-                        f"Image not found: {img_path} — omitting image.jpg from sample",
-                        stacklevel=2,
-                    )
+                if img_src:
+                    img_path = context.img_root / img_src
+                    if img_path.exists():
+                        payload["image.jpg"] = img_path.read_bytes()
+                    else:
+                        warnings.warn(
+                            f"Image not found: {img_path} — omitting image.jpg from sample",
+                            stacklevel=2,
+                        )
 
             samples.append(Sample(key=key, payload=payload))
             sample_idx += 1
