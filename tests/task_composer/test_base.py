@@ -24,6 +24,10 @@ class TestSample:
         s = Sample(key="k", payload={"__key__": "k", "image.jpg": b"\xff\xd8\xff"})
         assert isinstance(s.payload["image.jpg"], bytes)
 
+    def test_key_mismatch_raises(self):
+        with pytest.raises(ValueError, match="key mismatch"):
+            Sample(key="foo", payload={"__key__": "bar", "target.txt": "x"})
+
 
 class TestDocumentContext:
     def test_construction(self, tmp_path):

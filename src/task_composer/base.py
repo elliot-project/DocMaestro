@@ -28,6 +28,11 @@ class Sample:
                 f"Sample payload missing '__key__': {self.key!r}. "
                 "Add payload['__key__'] = self.key before constructing."
             )
+        if self.payload["__key__"] != self.key:
+            raise ValueError(
+                f"Sample key mismatch: key={self.key!r} but payload['__key__']={self.payload['__key__']!r}. "
+                "They must be identical."
+            )
 
 
 @dataclass
@@ -41,5 +46,5 @@ class DocumentContext:
     """
 
     doc_name: str
-    pages: list[ET.Element]
+    pages: list[ET.Element]  # document order; do not mutate after construction
     img_root: Path
