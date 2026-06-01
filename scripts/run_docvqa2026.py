@@ -370,8 +370,8 @@ def main() -> None:
                     "error": str(extraction),
                 }
             else:
-                spp = extraction.duration_seconds / max(extraction.page_count, 1)
-                print(f"  [ok]    {doc_id}: {extraction.page_count}p, {spp:.3f} s/page")
+                pps = max(extraction.page_count, 1) / extraction.duration_seconds if extraction.duration_seconds > 0 else 0
+                print(f"  [ok]    {doc_id}: {extraction.page_count}p, {pps:.2f} pages/sec")
                 outcome = _finalize_document(record, extraction, args.backend)
 
             results.append(outcome)
@@ -384,8 +384,10 @@ def main() -> None:
                     "docvqa/duration_s": outcome.get("duration_s", 0.0),
                 }
                 if outcome["status"] == "ok":
-                    log_payload["docvqa/secs_per_page"] = (
-                        outcome["duration_s"] / max(outcome["pages"], 1)
+                    pages_val = max(outcome["pages"], 1)
+                    duration_val = outcome["duration_s"]
+                    log_payload["docvqa/pages_per_sec"] = (
+                        pages_val / duration_val if duration_val > 0 else 0
                     )
                     log_payload["docvqa/doc_category"] = outcome.get("doc_category", "")
                 elif outcome["status"] == "error":
@@ -410,8 +412,9 @@ def main() -> None:
     print(f"  Total pages      : {total_pages}")
     print(f"  Wall-clock total : {sweep_duration:.1f}s")
     if ok:
-        mean_spp = sum(r["duration_s"] / max(r["pages"], 1) for r in ok) / len(ok)
-        print(f"  Mean s/page      : {mean_spp:.4f}")
+        total_time_ok = sum(r["duration_s"] for r in ok)
+        mean_pps = total_pages / total_time_ok if total_time_ok > 0 else 0
+        print(f"  Mean pages/sec   : {mean_pps:.4f}")
     if errors:
         print("\n  Failed documents:")
         for r in errors:

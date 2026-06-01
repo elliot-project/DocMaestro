@@ -54,11 +54,13 @@ def log_extraction_metrics(
         content_item_count: Number of content blocks in content_list.json.
     """
     latency_per_page = duration_seconds / max(page_count, 1)
+    pages_per_sec = max(page_count, 1) / duration_seconds if duration_seconds > 0 else 0
     pdf_size_mb = os.path.getsize(pdf_path) / (1024 * 1024) if pdf_path.exists() else 0.0
 
     wandb.log(
         {
             f"extraction/{backend}/total_duration_s": duration_seconds,
+            f"extraction/{backend}/pages_per_sec": pages_per_sec,
             f"extraction/{backend}/latency_per_page_s": latency_per_page,
             f"extraction/{backend}/pages": page_count,
             f"extraction/{backend}/content_items": content_item_count,

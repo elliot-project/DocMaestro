@@ -39,8 +39,9 @@ torch.manual_seed(42)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.extractor import SUPPORTED_BACKENDS, extract  # noqa: E402
+from src.extractor import SUPPORTED_BACKENDS, batch_extract, extract  # noqa: E402
 from src.utils.benchmark import init_run  # noqa: E402
+from src.utils.config import chunked  # noqa: E402
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 OUTPUT_DIR = Path("output/plots")
@@ -141,7 +142,7 @@ def _human_pages(n: int) -> str:
 # ── Plot 1: per-document latency ──────────────────────────────────────────────
 
 def _plot_latency(
-    records: list[dict],   # [{doc, pages, secs_per_page, total_s}]
+    records: list[dict],   # [{doc, pages, secs_per_page, pages_per_sec, total_s}]
     backend: str,
     gpu_mem_util: float,
 ) -> Path:
@@ -150,42 +151,45 @@ def _plot_latency(
     ax.set_facecolor("#16213e")
 
     xs     = np.arange(len(records))
-    spps   = [r["secs_per_page"] for r in records]
+    pps    = [r["pages_per_sec"] for r in records]
     labels = [r["doc"] for r in records]
     colors = [_DOC_PALETTE[i % len(_DOC_PALETTE)] for i in range(len(records))]
 
-    bars = ax.bar(xs, spps, color=colors, alpha=0.88, width=0.65)
+    bars = ax.bar(xs, pps, color=colors, alpha=0.88, width=0.65)
 
-    mean_spp = float(np.mean(spps))
-    std_spp  = float(np.std(spps))
-    ax.axhline(mean_spp, color="#ffb74d", linewidth=2,
-               label=f"mean {mean_spp:.3f} s/page")
-    ax.axhspan(mean_spp - std_spp, mean_spp + std_spp,
+    total_pages = sum(r["pages"] for r in records)
+    total_time = sum(r["total_s"] for r in records)
+    mean_pps = total_pages / total_time if total_time > 0 else 0
+    std_pps  = float(np.std(pps))
+    
+    ax.axhline(mean_pps, color="#ffb74d", linewidth=2,
+               label=f"mean {mean_pps:.2f} pages/sec")
+    ax.axhspan(mean_pps - std_pps, mean_pps + std_pps,
                color="#ffb74d", alpha=0.12, label="±1 σ")
 
-    for bar, v, rec in zip(bars, spps, records):
-        ax.text(bar.get_x() + bar.get_width() / 2, v + 0.01,
+    for bar, v, rec in zip(bars, pps, records):
+        ax.text(bar.get_x() + bar.get_width() / 2, v + (max(pps)*0.01),
                 f"{v:.2f}\n({rec['pages']}p)",
                 ha="center", va="bottom", fontsize=7.5,
                 color="#ddd", fontfamily="monospace")
 
-    ppm = 60.0 / mean_spp
+    ppm = mean_pps * 60.0
     ax.set_title(
         f"MinerU per-doc throughput — {backend}  |  "
         f"gpu_mem_util={gpu_mem_util}\n"
-        f"mean {mean_spp:.3f} s/page  ·  {ppm:.1f} pages/min  ·  "
+        f"mean {mean_pps:.2f} pages/sec  ·  {ppm:.1f} pages/min  ·  "
         f"{ppm*60:.0f} pages/hour",
         color="white", fontsize=10, pad=10,
     )
     ax.set_xticks(xs)
     ax.set_xticklabels(labels, rotation=40, ha="right", fontsize=8, color="#aaa")
-    ax.set_ylabel("Seconds / page", color="#aaa")
+    ax.set_ylabel("Pages / second", color="#aaa")
     ax.tick_params(colors="#aaa")
     for spine in ax.spines.values():
         spine.set_edgecolor("#444")
     ax.legend(facecolor="#2a2a4e", edgecolor="#555", labelcolor="white", fontsize=9)
 
-    out = OUTPUT_DIR / f"benchmark_{backend}_latency.png"
+    out = OUTPUT_DIR / f"benchmark_{backend}_throughput.png"
     fig.tight_layout()
     fig.savefig(out, dpi=150, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
@@ -293,9 +297,10 @@ def _plot_projection(
     ax.grid(which="minor", visible=False)
 
     ppm = 60.0 / mean_spp
+    pps = 1.0 / mean_spp if mean_spp > 0 else 0
     ax.set_title(
         f"MinerU scale projection — {backend}  |  gpu_mem_util={gpu_mem_util}\n"
-        f"baseline 1 GPU: {mean_spp:.3f} s/page  "
+        f"baseline 1 GPU: {pps:.2f} pages/sec  "
         f"({ppm:.1f} p/min  ·  {ppm*60:.0f} p/hr)",
         color="white", fontsize=11, pad=12,
     )
@@ -332,6 +337,10 @@ def main() -> None:
                         help="Physical GPU index for nvidia-smi monitoring. "
                              "Defaults to the first value in CUDA_VISIBLE_DEVICES, "
                              "or 0 if unset.")
+    parser.add_argument("--batch-size", type=int, default=None, metavar="N",
+                        help="Number of documents to batch together (pipeline backend only).")
+    parser.add_argument("--window-size", type=int, default=None, metavar="N",
+                        help="MinerU processing window size.")
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     args = parser.parse_args()
 
@@ -397,63 +406,113 @@ def main() -> None:
     doc_boundaries: list[tuple[float, str]] = []
     bench_t0 = time.perf_counter()
 
+    use_batching = args.backend == "pipeline" and args.batch_size is not None and args.batch_size > 1
+    if args.window_size is not None:
+        os.environ["MINERU_PROCESSING_WINDOW_SIZE"] = str(args.window_size)
+
     for rep in range(args.repeats):
-        for pdf in pdfs:
-            doc_name = pdf.stem
-            run_dir  = args.data_dir / doc_name / args.backend / f"bench_r{rep}"
-            t_start  = time.perf_counter() - bench_t0
-            doc_boundaries.append((t_start, doc_name))
+        out_root = args.data_dir / "bench_sharded" / args.backend / f"bench_r{rep}"
+        
+        if use_batching:
+            for chunk in chunked(pdfs, args.batch_size):
+                print(f"  [{rep+1}/{args.repeats}] Batch processing {[p.name for p in chunk]} …", flush=True)
+                chunk_results = batch_extract(
+                    pdf_paths=chunk,
+                    output_dir=out_root,
+                    backend=args.backend,
+                    gpu_memory_utilization=gmu,
+                )
+                for pdf, result in zip(chunk, chunk_results):
+                    doc_name = pdf.stem
+                    t_start  = time.perf_counter() - bench_t0
+                    doc_boundaries.append((t_start, doc_name))
+                    if isinstance(result, Exception):
+                        print(f"  [error] {doc_name}: {result}")
+                        continue
+                        
+                    spp = result.duration_seconds / max(result.page_count, 1)
+                    pps = max(result.page_count, 1) / result.duration_seconds
+                    records.append({
+                        "doc":           doc_name,
+                        "pages":         result.page_count,
+                        "secs_per_page": spp,
+                        "pages_per_sec": pps,
+                        "total_s":       result.duration_seconds,
+                        "rep":           rep,
+                    })
+                    print(f"    {doc_name}: {result.duration_seconds:.1f}s / {result.page_count}p = "
+                          f"{pps:.2f} pages/sec  ({pps*60:.1f} p/min)")
 
-            print(f"  [{rep+1}/{args.repeats}] {doc_name} …", end=" ", flush=True)
-            result = extract(
-                pdf_path=pdf,
-                output_dir=run_dir,
-                backend=args.backend,
-                gpu_memory_utilization=gmu,
-            )
-            spp = result.duration_seconds / max(result.page_count, 1)
-            records.append({
-                "doc":           doc_name,
-                "pages":         result.page_count,
-                "secs_per_page": spp,
-                "total_s":       result.duration_seconds,
-                "rep":           rep,
-            })
-            print(f"{result.duration_seconds:.1f}s / {result.page_count}p = "
-                  f"{spp:.3f} s/page  ({60/spp:.1f} p/min)")
+                    wandb.log({
+                        "bench/doc":           doc_name,
+                        "bench/rep":           rep,
+                        "bench/pages":         result.page_count,
+                        "bench/total_s":       result.duration_seconds,
+                        "bench/pages_per_sec": pps,
+                        "bench/pages_per_min": pps * 60.0,
+                    })
+        else:
+            for pdf in pdfs:
+                doc_name = pdf.stem
+                run_dir  = args.data_dir / doc_name / args.backend / f"bench_r{rep}"
+                t_start  = time.perf_counter() - bench_t0
+                doc_boundaries.append((t_start, doc_name))
 
-            wandb.log({
-                "bench/doc":           doc_name,
-                "bench/rep":           rep,
-                "bench/pages":         result.page_count,
-                "bench/total_s":       result.duration_seconds,
-                "bench/secs_per_page": spp,
-                "bench/pages_per_min": 60.0 / spp,
-            })
+                print(f"  [{rep+1}/{args.repeats}] {doc_name} …", end=" ", flush=True)
+                result = extract(
+                    pdf_path=pdf,
+                    output_dir=run_dir,
+                    backend=args.backend,
+                    gpu_memory_utilization=gmu,
+                )
+                spp = result.duration_seconds / max(result.page_count, 1)
+                pps = max(result.page_count, 1) / result.duration_seconds
+                records.append({
+                    "doc":           doc_name,
+                    "pages":         result.page_count,
+                    "secs_per_page": spp,
+                    "pages_per_sec": pps,
+                    "total_s":       result.duration_seconds,
+                    "rep":           rep,
+                })
+                print(f"{result.duration_seconds:.1f}s / {result.page_count}p = "
+                      f"{pps:.2f} pages/sec  ({pps*60:.1f} p/min)")
+
+                wandb.log({
+                    "bench/doc":           doc_name,
+                    "bench/rep":           rep,
+                    "bench/pages":         result.page_count,
+                    "bench/total_s":       result.duration_seconds,
+                    "bench/pages_per_sec": pps,
+                    "bench/pages_per_min": pps * 60.0,
+                })
 
     monitor.stop()
     total_wall = time.perf_counter() - bench_t0
     total_pages = sum(r["pages"] for r in records)
 
     # ── Aggregate stats ───────────────────────────────────────────────────────
+    all_pps  = [r["pages_per_sec"] for r in records]
     all_spp  = [r["secs_per_page"] for r in records]
     mean_spp = float(np.mean(all_spp))
     std_spp  = float(np.std(all_spp))
-    ppm      = 60.0 / mean_spp
+    mean_pps = total_pages / total_wall if total_wall > 0 else 0
+    std_pps  = float(np.std(all_pps))
+    ppm      = mean_pps * 60.0
 
     print("\n── Aggregate Results ──────────────────────────────────────────")
     print(f"  Documents        : {len(pdfs)}  ×  {args.repeats} repeat(s)")
     print(f"  Total pages      : {total_pages}")
     print(f"  Wall-clock total : {total_wall:.1f}s")
-    print(f"  s/page  mean     : {mean_spp:.4f}  (std {std_spp:.4f})")
+    print(f"  pages/sec mean   : {mean_pps:.4f}  (std {std_pps:.4f})")
     print(f"  Pages / min      : {ppm:.2f}")
     print(f"  Pages / hour     : {ppm*60:.0f}")
     print(f"  GPU util mean    : {monitor.mean:.1f}%  peak {monitor.peak:.1f}%")
     print(f"  Model-init       : {init_overhead:.1f}s (excluded)")
 
     wandb.log({
-        "bench/mean_secs_per_page":    mean_spp,
-        "bench/std_secs_per_page":     std_spp,
+        "bench/mean_pages_per_sec":    mean_pps,
+        "bench/std_pages_per_sec":     std_pps,
         "bench/pages_per_min":         ppm,
         "bench/pages_per_hour":        ppm * 60,
         "bench/total_pages":           total_pages,
