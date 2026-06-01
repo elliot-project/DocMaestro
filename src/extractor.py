@@ -239,6 +239,7 @@ def extract(
             (e.g. 0.85). Passed directly to vllm.LLM(). None → MinerU default
             (0.5). Higher values increase batch capacity and throughput at the
             cost of VRAM headroom. Only used by in-process vLLM backends.
+            No-op for the 'pipeline' backend (pipeline uses CV models, not vLLM).
 
     Returns:
         ExtractionResult containing parsed JSON data and timing metadata.
@@ -320,3 +321,125 @@ def extract(
         page_count=page_count,
         output_dir=output_dir,
     )
+
+
+def batch_extract(
+    pdf_paths: list[Path],
+    output_dir: Path,
+    backend: str = "pipeline",
+    language: str = "en",
+    server_url: str | None = None,
+    gpu_memory_utilization: float | None = None,
+) -> list[ExtractionResult | Exception]:
+    """Run MinerU extraction on a batch of PDFs in a single do_parse call.
+
+    Passing multiple PDFs at once lets MinerU's streaming pipeline batch pages
+    across all documents in one GPU forward pass. The sliding window (default
+    64 pages, set via MINERU_PROCESSING_WINDOW_SIZE) fills from all documents
+    simultaneously, improving GPU utilisation compared to calling extract()
+    once per document.
+
+    Output structure: do_parse writes each doc to
+      <output_dir>/<doc_stem>/<parse_method>/  (e.g. .../doc1/auto/)
+    Use _find_json_file(output_dir / doc_stem, suffix) to locate results.
+
+    Throughput notes:
+      - 'pipeline': gains come from filling the page window. batch_ratio
+        (internal GPU batch multiplier) is auto-set from VRAM by MinerU.
+        Set MINERU_PROCESSING_WINDOW_SIZE if batch_size × avg_pages > 64.
+      - VLM/hybrid: page-batching gains are limited here; use aio_do_parse
+        for true async concurrency on those backends.
+      - gpu_memory_utilization is silently ignored for 'pipeline' by MinerU.
+
+    Args:
+        pdf_paths: PDFs to process. All must exist. Stems must be unique
+            within the batch (MinerU uses stem as the output sub-directory).
+        output_dir: Shared root directory. MinerU writes each doc to
+            output_dir/<stem>/<parse_method>/.
+        backend: MinerU backend. Defaults to 'pipeline'.
+        language: OCR language hint applied to all documents.
+        server_url: VLM server URL for http-client backends.
+        gpu_memory_utilization: vLLM KV-cache fraction. No-op for pipeline.
+
+    Returns:
+        List aligned with pdf_paths: ExtractionResult on success, Exception
+        on per-doc output failure. If do_parse itself raises, all entries
+        in the batch receive the same Exception.
+
+    Raises:
+        ValueError: If backend is unsupported.
+        FileNotFoundError: If any pdf_path does not exist.
+    """
+    if backend not in SUPPORTED_BACKENDS:
+        raise ValueError(
+            f"Unsupported backend '{backend}'. Choose from: {sorted(SUPPORTED_BACKENDS)}"
+        )
+    for p in pdf_paths:
+        if not p.exists():
+            raise FileNotFoundError(f"PDF not found: {p}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    doc_names = [p.stem for p in pdf_paths]
+    pdf_bytes_list = [p.read_bytes() for p in pdf_paths]
+    lang_list = [language] * len(pdf_paths)
+
+    vlm_kwargs: dict = {}
+    if gpu_memory_utilization is not None:
+        vlm_kwargs["gpu_memory_utilization"] = gpu_memory_utilization
+
+    from mineru.cli.common import do_parse
+
+    start_time = time.perf_counter()
+    batch_exc: Exception | None = None
+    try:
+        do_parse(
+            output_dir=str(output_dir),
+            pdf_file_names=list(doc_names),
+            pdf_bytes_list=list(pdf_bytes_list),
+            p_lang_list=lang_list,
+            backend=backend,
+            parse_method="auto",
+            server_url=server_url,
+            f_dump_middle_json=True,
+            f_dump_content_list=True,
+            f_dump_md=False,
+            f_dump_orig_pdf=False,
+            f_draw_layout_bbox=False,
+            f_draw_span_bbox=False,
+            f_dump_model_output=False,
+            **vlm_kwargs,
+        )
+    except Exception as exc:
+        batch_exc = exc
+
+    duration = time.perf_counter() - start_time
+
+    results: list[ExtractionResult | Exception] = []
+    for doc_name, pdf_path in zip(doc_names, pdf_paths):
+        if batch_exc is not None:
+            results.append(batch_exc)
+            continue
+        doc_out = output_dir / doc_name
+        try:
+            middle_path = _find_json_file(doc_out, "_middle.json")
+            content_list_path = _find_json_file(doc_out, "_content_list.json")
+            if middle_path is None:
+                raise RuntimeError(f"middle.json not found under {doc_out}.")
+            if content_list_path is None:
+                raise RuntimeError(f"content_list.json not found under {doc_out}.")
+            middle_json: dict = json.loads(middle_path.read_text(encoding="utf-8"))
+            content_list: list[dict] = json.loads(content_list_path.read_text(encoding="utf-8"))
+            results.append(ExtractionResult(
+                content_list=content_list,
+                middle_json=middle_json,
+                backend=backend,
+                pdf_path=pdf_path.resolve(),
+                duration_seconds=duration,
+                page_count=len(middle_json.get("pdf_info", [])),
+                output_dir=doc_out,
+            ))
+        except Exception as exc:
+            results.append(exc)
+
+    return results

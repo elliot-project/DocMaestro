@@ -4,9 +4,21 @@ Runs MinerU extraction, XML synthesis, and optional post-processing stages
 (title-aided hierarchy detection, SigLIP2 figure classification) for one PDF
 or a directory of PDFs, driven by a YAML config file.
 
+Batching (pipeline backend only)
+---------------------------------
+When backend=pipeline and batch_size > 1, all PDFs in a chunk are passed to
+a single do_parse call so MinerU's streaming window batches pages across docs
+simultaneously — improving GPU utilisation vs. one-at-a-time calls.
+Batching has no effect on VLM/hybrid backends (they loop docs internally).
+Title-aided detection requires batch_size=1 (hybrid backend only).
+
+Set window_size (or MINERU_PROCESSING_WINDOW_SIZE) when
+batch_size × avg_pages_per_doc exceeds the default window of 64.
+
 Usage:
     uv run main.py --pdf data/pdfs/report.pdf
     uv run main.py --pdf data/pdfs/ --config configs/extractor/fast.yaml
+    uv run main.py --pdf data/pdfs/ --backend pipeline --batch-size 4
     uv run main.py --pdf data/pdfs/report.pdf --no-wandb
 """
 
@@ -14,8 +26,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
-import time
 import warnings
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -24,11 +36,22 @@ import wandb
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from src.benchmark import init_run, log_extraction_metrics, log_gpu_memory, log_xml_stats
-from src.extractor import extract
-from src.figure_classifier import FigureClassifier
-from src.utils.config import FigureClassificationConfig, PipelineConfig, collect_pdfs, load_config
-from src.xml_formatter import build_document_xml, save_document_xml
+from src.extractor import ExtractionResult, batch_extract, extract  # noqa: E402
+from src.figure_classifier import FigureClassifier  # noqa: E402
+from src.utils.benchmark import (  # noqa: E402
+    init_run,
+    log_extraction_metrics,
+    log_gpu_memory,
+    log_xml_stats,
+)
+from src.utils.config import (  # noqa: E402
+    FigureClassificationConfig,
+    PipelineConfig,
+    chunked,
+    collect_pdfs,
+    load_config,
+)
+from src.xml_formatter import build_document_xml, save_document_xml  # noqa: E402
 
 _DEFAULT_CONFIG = Path("configs/extractor/default.yaml")
 
@@ -96,73 +119,46 @@ def _enrich_figures(xml_path: Path, img_root: Path, cfg: FigureClassificationCon
     print(f"  [figure-clf] Classified {len(figures)} figures → {xml_path.name}")
 
 
-# ── Document processor ────────────────────────────────────────────────────────
+# ── Per-doc finalization ──────────────────────────────────────────────────────
 
 
-def process_document(pdf_path: Path, config: PipelineConfig) -> None:
-    """Run the full pipeline for a single PDF.
-
-    Stages:
-        1. MinerU extraction
-        2. XML synthesis
-        3. Figure classification (if enabled)
-
-    WandB metrics are logged throughout each stage.
+def _finalize_document(
+    pdf_path: Path,
+    result: ExtractionResult,
+    config: PipelineConfig,
+    step: int = 0,
+) -> None:
+    """Save JSON, build XML, run figure-clf, and log WandB for one extracted doc.
 
     Args:
-        pdf_path: Path to the source PDF file.
+        pdf_path: Source PDF path.
+        result: ExtractionResult from extract() or batch_extract().
         config: Full pipeline configuration.
+        step: WandB step index for the current run.
     """
     ext = config.extraction
     doc_name = pdf_path.stem
     xml_path = config.paths.output_dir / doc_name / f"{doc_name}_{ext.backend}.xml"
 
-    run = init_run(
-        pdf_name=pdf_path.name,
+    print(f"[{doc_name}] Extracted {result.page_count} pages in {result.duration_seconds:.1f}s")
+
+    log_extraction_metrics(
+        duration_seconds=result.duration_seconds,
+        page_count=result.page_count,
         backend=ext.backend,
-        extra_config={
-            "language": ext.language,
-            "start_page": ext.start_page,
-            "end_page": ext.end_page,
-            "title_aided": config.title_aided.enabled,
-            "figure_classification": config.figure_classification.enabled,
-        },
+        pdf_path=pdf_path,
+        content_item_count=len(result.content_list),
     )
+    log_gpu_memory()
+    _save_raw_json(result, config.paths.data_dir, doc_name, ext.backend)
 
-    try:
-        # ── 1. Extract ────────────────────────────────────────────────────────
-        print(f"\n[{doc_name}] Extracting with backend={ext.backend}")
-        log_gpu_memory()
-        t0 = time.perf_counter()
+    xml_str = build_document_xml(result.content_list, result.middle_json, doc_name)
+    save_document_xml(xml_str, xml_path)
+    log_xml_stats(xml_str, xml_path)
+    print(f"[{doc_name}] XML saved: {xml_path}")
 
-        result = extract(
-            pdf_path=pdf_path,
-            output_dir=config.paths.data_dir / doc_name / ext.backend,
-            backend=ext.backend,
-            language=ext.language,
-            start_page=ext.start_page,
-            end_page=ext.end_page,
-            server_url=ext.server_url,
-            title_aided_config=config.title_aided.as_mineru_config(),
-        )
-
-        print(f"[{doc_name}] Extracted {result.page_count} pages in {result.duration_seconds:.1f}s")
-        log_extraction_metrics(
-            duration_seconds=result.duration_seconds,
-            page_count=result.page_count,
-            backend=ext.backend,
-            pdf_path=pdf_path,
-            content_item_count=len(result.content_list),
-        )
-        log_gpu_memory()
-        _save_raw_json(result, config.paths.data_dir, doc_name, ext.backend)
-
-        # ── 2. Build XML ──────────────────────────────────────────────────────
-        xml_str = build_document_xml(result.content_list, result.middle_json, doc_name)
-        save_document_xml(xml_str, xml_path)
-        log_xml_stats(xml_str, xml_path)
-        print(f"[{doc_name}] XML saved: {xml_path}")
-
+    run = wandb.run
+    if run is not None:
         artifact = wandb.Artifact(
             name=f"{doc_name}-{ext.backend}",
             type="document-xml",
@@ -171,17 +167,10 @@ def process_document(pdf_path: Path, config: PipelineConfig) -> None:
         artifact.add_file(str(xml_path))
         run.log_artifact(artifact)
 
-        # ── 3. Figure classification ──────────────────────────────────────────
-        if config.figure_classification.enabled:
-            print(f"[{doc_name}] Running figure classification")
-            img_root = _find_img_root(result.output_dir)
-            _enrich_figures(xml_path, img_root, config.figure_classification)
-
-        total = time.perf_counter() - t0
-        print(f"[{doc_name}] Pipeline complete in {total:.1f}s")
-
-    finally:
-        wandb.finish()
+    if config.figure_classification.enabled:
+        print(f"[{doc_name}] Running figure classification")
+        img_root = _find_img_root(result.output_dir)
+        _enrich_figures(xml_path, img_root, config.figure_classification)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -191,7 +180,7 @@ def parse_args() -> argparse.Namespace:
     """Parse command-line arguments.
 
     Returns:
-        Namespace with pdf, config, and no_wandb fields.
+        Namespace with pdf, config, no_wandb, batch_size, and window_size fields.
     """
     parser = argparse.ArgumentParser(
         description="OmniDocParser: full MinerU → XML → enrichment pipeline."
@@ -204,6 +193,22 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=_DEFAULT_CONFIG,
         help=f"YAML config file. Default: {_DEFAULT_CONFIG}",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Documents per do_parse call (pipeline backend only). "
+             "Overrides the value in the config file.",
+    )
+    parser.add_argument(
+        "--window-size",
+        type=int,
+        default=None,
+        metavar="N",
+        help="MinerU page-window size (MINERU_PROCESSING_WINDOW_SIZE). "
+             "Overrides the value in the config file.",
     )
     parser.add_argument(
         "--no-wandb", action="store_true", help="Disable WandB logging for this run."
@@ -219,15 +224,85 @@ def main() -> None:
     if args.no_wandb:
         config.wandb_enabled = False
 
+    # CLI overrides for batch tuning
+    if args.batch_size is not None:
+        config.extraction.batch_size = args.batch_size
+    if args.window_size is not None:
+        config.extraction.window_size = args.window_size
+
+    ext = config.extraction
+    use_batching = ext.backend == "pipeline" and ext.batch_size > 1
+
+    if ext.window_size:
+        os.environ["MINERU_PROCESSING_WINDOW_SIZE"] = str(ext.window_size)
+
     pdfs = collect_pdfs(args.pdf)
     print(
-        f"Found {len(pdfs)} PDF(s) | backend={config.extraction.backend} | "
+        f"Found {len(pdfs)} PDF(s) | backend={ext.backend} | "
+        f"batch_size={ext.batch_size if use_batching else 1} | "
         f"figure-clf={'on' if config.figure_classification.enabled else 'off'} | "
         f"title-aided={'on' if config.title_aided.enabled else 'off'}"
     )
+    if ext.batch_size > 1 and ext.backend != "pipeline":
+        print(
+            f"  [info] batch_size={ext.batch_size} ignored — "
+            f"batching only improves throughput for the pipeline backend."
+        )
 
-    for pdf in pdfs:
-        process_document(pdf, config)
+    init_run(
+        pdf_name=args.pdf.name,
+        backend=ext.backend,
+        extra_config={
+            "language": ext.language,
+            "batch_size": ext.batch_size if use_batching else 1,
+            "window_size": ext.window_size,
+            "title_aided": config.title_aided.enabled,
+            "figure_classification": config.figure_classification.enabled,
+            "total_pdfs": len(pdfs),
+        },
+    )
+
+    try:
+        if use_batching:
+            # ── Batched pipeline path ─────────────────────────────────────────
+            # batch_extract passes N PDFs to one do_parse call so the streaming
+            # window can batch pages across docs simultaneously.
+            for chunk in chunked(pdfs, ext.batch_size):
+                print(f"\nBatch extracting: {[p.name for p in chunk]}")
+                log_gpu_memory()
+                chunk_results = batch_extract(
+                    pdf_paths=chunk,
+                    output_dir=config.paths.data_dir,
+                    backend=ext.backend,
+                    language=ext.language,
+                )
+                for pdf_path, result in zip(chunk, chunk_results):
+                    if isinstance(result, Exception):
+                        print(f"[{pdf_path.stem}] FAILED: {result}")
+                        wandb.log({"error": str(result), "doc": pdf_path.name})
+                        continue
+                    _finalize_document(pdf_path, result, config)
+        else:
+            # ── Per-document path (hybrid / VLM / single-doc pipeline) ────────
+            for i, pdf_path in enumerate(pdfs):
+                doc_name = pdf_path.stem
+                print(f"\n[{doc_name}] Extracting with backend={ext.backend}")
+                log_gpu_memory()
+
+                result = extract(
+                    pdf_path=pdf_path,
+                    output_dir=config.paths.data_dir / doc_name / ext.backend,
+                    backend=ext.backend,
+                    language=ext.language,
+                    start_page=ext.start_page,
+                    end_page=ext.end_page,
+                    server_url=ext.server_url,
+                    title_aided_config=config.title_aided.as_mineru_config(),
+                )
+                _finalize_document(pdf_path, result, config, step=i)
+
+    finally:
+        wandb.finish()
 
 
 if __name__ == "__main__":

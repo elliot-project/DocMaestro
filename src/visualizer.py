@@ -826,169 +826,6 @@ def draw_dom_graph_viz(
     _write_d3_tree_html(tree_json, output_path)
 
 
-def _flatten_tree_for_render(
-    node: dict,
-    depth: int = 0,
-    result: list | None = None,
-    max_items: int = 300,
-    _at_root: bool = True,
-) -> list[tuple[int, str, int, str, int]]:
-    """DFS flatten to (depth, type, level, display_text, page_idx) tuples.
-
-    Title nodes form the structural skeleton. Leaf content under titles is
-    collapsed into a count summary on the parent title's row. Only root-level
-    leaves (content before the first title) are shown individually.
-
-    Args:
-        node: Current tree node.
-        depth: Current render depth (0 = root children).
-        result: Accumulator list (mutated in place).
-        max_items: Maximum rows to emit before truncating.
-        _at_root: True only for the document root's direct children.
-
-    Returns:
-        List of (depth, type, level, display_text, page_idx) tuples.
-    """
-    if result is None:
-        result = []
-
-    for child in node.get("children", []):
-        if len(result) >= max_items:
-            result.append((depth, "truncated", 0, "... (truncated)", -1))
-            break
-
-        ctype = child.get("type", "text")
-
-        if ctype == "title":
-            leaf_counts = _all_descendant_leaf_counts(child)
-            summary = "  ".join(f"{v} {k}" for k, v in sorted(leaf_counts.items()) if v > 0)
-            display = child.get("text", "")[:70]
-            if summary:
-                display += f"  [{summary}]"
-            result.append(
-                (depth, "title", child.get("level", 1), display, child.get("page_idx", 0))
-            )
-            # Recurse into this title's children — but mark as not-root so
-            # leaves inside titles are suppressed
-            _flatten_tree_for_render(child, depth + 1, result, max_items, _at_root=False)
-        elif _at_root:
-            # Pre-title root-level content (cover images, front matter)
-            icon = CONTENT_TYPE_ICONS.get(ctype, "-")
-            text = child.get("text", "")[:55] or f"({ctype})"
-            result.append((depth, ctype, 0, f"{icon}  {text}", child.get("page_idx", 0)))
-        # else: leaf under a title — suppressed (already counted in parent summary)
-
-    return result
-
-
-def draw_doc_tree_viz(
-    content_list: list[dict],
-    doc_name: str,
-    output_path: Path,
-    *,
-    max_items: int = 250,
-) -> None:
-    """Render the document tree as a hierarchical indented diagram.
-
-    Titles form the structural backbone with per-section leaf-type counts.
-    Content blocks appear as leaves under their enclosing title.
-
-    Args:
-        content_list: Flat content list from content_list.json.
-        doc_name: Document name used as root label and figure title.
-        output_path: File path for the saved PNG.
-        max_items: Maximum rows to render before truncating.
-    """
-    tree = build_doc_tree(content_list, doc_name)
-    rows = _flatten_tree_for_render(tree, depth=0, max_items=max_items)
-
-    if not rows:
-        return
-
-    n_rows = len(rows) + 2  # +2 for root label
-    row_h_inches = 0.28
-    fig_h = max(8, n_rows * row_h_inches)
-    fig, ax = plt.subplots(figsize=(16, fig_h))
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, n_rows)
-    ax.set_axis_off()
-
-    indent_unit = 0.020
-    row_h = 1.0
-    y = n_rows - 1
-
-    # Root label
-    ax.text(
-        0,
-        y,
-        f"[DOC]  {doc_name}",
-        fontsize=9,
-        fontweight="bold",
-        color="#212121",
-        va="top",
-        fontfamily="monospace",
-    )
-    y -= row_h
-
-    for depth, ctype, level, text, page_idx in rows:
-        if ctype == "title":
-            color = CONTENT_TYPE_COLORS["title"]
-            weight = "bold"
-            prefix = ">> " + ("-" * level) + " "
-            fs = max(7, 9 - level * 0.5)
-        elif ctype == "truncated":
-            color = "#9E9E9E"
-            weight = "normal"
-            prefix = "  "
-            fs = 7
-        else:
-            color = _type_color(ctype)
-            weight = "normal"
-            prefix = "  "
-            fs = 7
-
-        x = indent_unit * (depth + 1)
-        page_tag = f"  p.{page_idx}" if page_idx >= 0 else ""
-        label = f"{prefix}{text}{page_tag}"
-
-        ax.text(
-            x,
-            y,
-            label,
-            fontsize=fs,
-            color=color,
-            fontweight=weight,
-            va="top",
-            ha="left",
-            fontfamily="monospace",
-        )
-        y -= row_h
-
-    # Type legend
-    legend_handles = [
-        mpatches.Patch(color=CONTENT_TYPE_COLORS["title"], label="title / heading"),
-    ]
-    for t in ["text", "image", "table", "chart", "equation", "code", "list"]:
-        if any(r[1] == t for r in rows):
-            legend_handles.append(
-                mpatches.Patch(color=CONTENT_TYPE_COLORS.get(t, DEFAULT_COLOR), label=t)
-            )
-    ax.legend(
-        handles=legend_handles,
-        loc="upper right",
-        fontsize=6,
-        framealpha=0.9,
-        title="Content type",
-        title_fontsize=6,
-    )
-
-    ax.set_title(f"Document Structure Tree — {doc_name}", fontsize=10, pad=6)
-    fig.tight_layout(pad=0.5)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-
-
 # ── Batch runner ──────────────────────────────────────────────────────────────
 
 
@@ -1003,9 +840,8 @@ def generate_all_visualizations(
 ) -> list[Path]:
     """Generate all three visualization types for the given document.
 
-    Produces layout-bbox PNGs and reading-order PNGs per page, plus one
-    document-tree PNG for the full document. Optionally generates interactive
-    DOM graph HTML files via D3 when `dom=True`.
+    Produces layout-bbox PNGs and reading-order PNGs per page. Optionally
+    generates interactive DOM graph HTML files via D3 when `dom=True`.
 
     Args:
         pdf_path: Path to the source PDF.
@@ -1039,11 +875,6 @@ def generate_all_visualizations(
         draw_reading_order_viz(pdf_path, content_list, page_idx, order_path)
         print(f"  saved: {order_path.name}")
         saved.append(order_path)
-
-    tree_path = plots_dir / f"{doc_name}_document_tree.png"
-    draw_doc_tree_viz(content_list, doc_name, tree_path)
-    print(f"  saved: {tree_path.name}")
-    saved.append(tree_path)
 
     if dom:
         full_dom_path = plots_dir / f"{doc_name}_dom_full.html"

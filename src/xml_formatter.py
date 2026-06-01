@@ -6,7 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 from xml.dom import minidom
 
-from src.xml_schema import format_bbox, resolve_tag
+from src.utils.xml_schema import format_bbox, resolve_tag
 
 # Matches characters that are illegal in XML 1.0 (null bytes, C0 controls except
 # tab/LF/CR, and DEL).  These sometimes appear in MinerU's OCR output.

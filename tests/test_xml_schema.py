@@ -1,6 +1,6 @@
 """Unit tests for xml_schema.py — tag resolution and bbox formatting."""
 
-from src.xml_schema import format_bbox, resolve_tag
+from src.utils.xml_schema import format_bbox, resolve_tag
 
 
 class TestResolveTag:

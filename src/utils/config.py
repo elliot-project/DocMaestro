@@ -17,6 +17,8 @@ class ExtractionConfig:
     start_page: int = 0
     end_page: int | None = None
     server_url: str | None = None
+    batch_size: int = 1
+    window_size: int | None = None
 
 
 @dataclass
@@ -113,6 +115,8 @@ def load_config(config_path: Path) -> PipelineConfig:
             start_page=extraction_raw.get("start_page", 0),
             end_page=extraction_raw.get("end_page", None),
             server_url=extraction_raw.get("server_url", None),
+            batch_size=extraction_raw.get("batch_size", 1),
+            window_size=extraction_raw.get("window_size", None),
         ),
         title_aided=TitleAidedConfig(
             enabled=title_aided_raw.get("enabled", False),
@@ -130,6 +134,19 @@ def load_config(config_path: Path) -> PipelineConfig:
         paths=paths,
         wandb_enabled=raw.get("wandb_enabled", True),
     )
+
+
+def chunked(lst: list, n: int) -> list[list]:
+    """Split lst into chunks of at most n items.
+
+    Args:
+        lst: Input list.
+        n: Maximum chunk size (must be >= 1).
+
+    Returns:
+        List of sub-lists; the last chunk may be shorter than n.
+    """
+    return [lst[i : i + n] for i in range(0, len(lst), n)]
 
 
 def collect_pdfs(input_path: Path) -> list[Path]:

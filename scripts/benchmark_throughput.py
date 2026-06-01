@@ -39,8 +39,8 @@ torch.manual_seed(42)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.benchmark import init_run  # noqa: E402
 from src.extractor import SUPPORTED_BACKENDS, extract  # noqa: E402
+from src.utils.benchmark import init_run  # noqa: E402
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 OUTPUT_DIR = Path("output/plots")

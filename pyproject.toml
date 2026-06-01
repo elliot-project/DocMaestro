@@ -12,6 +12,8 @@ dependencies = [
     "networkx>=3.4.2",
     "vllm>=0.11.0",
     "transformers>=4.57.6",
+    "nvitop>=1.7.0",
+    "datasets>=4.8.5",
 ]
 
 [tool.ruff]
