@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 import xml.etree.ElementTree as ET
 
 
@@ -48,3 +49,65 @@ class DocumentContext:
     doc_name: str
     pages: list[ET.Element]  # document order; do not mutate after construction
     img_root: Path
+
+
+class BaseTaskComposer(ABC):
+    """Abstract base class for all SSL task composers.
+
+    Subclasses must declare a ``task_name`` class variable and implement
+    ``compose_page``. The ``compose_document`` default iterates every page
+    and collects samples — override it only if the task requires multi-page
+    coordination during composition.
+    """
+
+    task_name: ClassVar[str]
+
+    def __init__(self) -> None:
+        if not getattr(type(self), "task_name", None):
+            raise TypeError(
+                f"{type(self).__name__} must define a 'task_name' class variable"
+            )
+
+    @abstractmethod
+    def compose_page(
+        self,
+        page: ET.Element,
+        context: DocumentContext,
+    ) -> list[Sample]:
+        """Produce all task samples for a single page.
+
+        Args:
+            page: The ``<page>`` ET.Element to compose samples from.
+            context: Full document context for cross-page lookups.
+
+        Returns:
+            List of ``Sample`` objects, possibly empty if no eligible
+            elements exist on this page.
+        """
+
+    def compose_document(
+        self,
+        root: ET.Element,
+        img_root: Path,
+    ) -> list[Sample]:
+        """Compose samples for every page in a document.
+
+        Default implementation iterates all pages in document order.
+        Override if a task needs coordination across pages during composition.
+
+        Args:
+            root: The ``<document>`` root ET.Element.
+            img_root: Base directory for resolving image src paths.
+
+        Returns:
+            Flat list of all samples produced across all pages.
+        """
+        ctx = DocumentContext(
+            doc_name=root.attrib["name"],
+            pages=list(root),
+            img_root=img_root,
+        )
+        samples: list[Sample] = []
+        for page in ctx.pages:
+            samples.extend(self.compose_page(page, ctx))
+        return samples

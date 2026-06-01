@@ -42,3 +42,63 @@ class TestDocumentContext:
         ctx = DocumentContext(doc_name="d", pages=pages, img_root=Path("/tmp"))
         for i, p in enumerate(ctx.pages):
             assert p.attrib["idx"] == str(i)
+
+
+from src.task_composer.base import BaseTaskComposer
+
+
+class _ConcreteComposer(BaseTaskComposer):
+    """Minimal concrete subclass that returns one sample per page."""
+
+    task_name = "test_task"
+
+    def compose_page(self, page: ET.Element, context: DocumentContext) -> list[Sample]:
+        key = f"{context.doc_name}_p{page.attrib['idx']}_test_0"
+        return [Sample(key=key, payload={"__key__": key, "target.txt": "y"})]
+
+
+class TestBaseTaskComposer:
+    def _make_root(self, n_pages: int = 3) -> ET.Element:
+        root = ET.Element("document", {"name": "testdoc", "page_count": str(n_pages), "backend": "hybrid"})
+        for i in range(n_pages):
+            ET.SubElement(root, "page", {"idx": str(i), "width": "600", "height": "800"})
+        return root
+
+    def test_task_name_declared(self):
+        assert _ConcreteComposer.task_name == "test_task"
+
+    def test_cannot_instantiate_without_task_name(self):
+        class _BadComposer(BaseTaskComposer):
+            def compose_page(self, page, context):
+                return []
+
+        with pytest.raises(TypeError):
+            _BadComposer()
+
+    def test_compose_document_iterates_all_pages(self, tmp_path):
+        root = self._make_root(n_pages=3)
+        composer = _ConcreteComposer()
+        samples = composer.compose_document(root, img_root=tmp_path)
+        assert len(samples) == 3
+
+    def test_compose_document_builds_context_correctly(self, tmp_path):
+        root = self._make_root(n_pages=2)
+        composer = _ConcreteComposer()
+        samples = composer.compose_document(root, img_root=tmp_path)
+        assert samples[0].key.startswith("testdoc_p0")
+        assert samples[1].key.startswith("testdoc_p1")
+
+    def test_compose_document_passes_img_root(self, tmp_path):
+        """img_root must be reachable from context inside compose_page."""
+        captured: list[Path] = []
+
+        class _CapturingComposer(BaseTaskComposer):
+            task_name = "capturing"
+
+            def compose_page(self, page, context):
+                captured.append(context.img_root)
+                return []
+
+        root = self._make_root(n_pages=1)
+        _CapturingComposer().compose_document(root, img_root=tmp_path)
+        assert captured[0] == tmp_path
