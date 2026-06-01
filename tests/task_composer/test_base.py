@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from src.task_composer.base import DocumentContext, Sample
+from src.task_composer.base import BaseTaskComposer, DocumentContext, Sample
 
 
 class TestSample:
@@ -42,9 +42,6 @@ class TestDocumentContext:
         ctx = DocumentContext(doc_name="d", pages=pages, img_root=Path("/tmp"))
         for i, p in enumerate(ctx.pages):
             assert p.attrib["idx"] == str(i)
-
-
-from src.task_composer.base import BaseTaskComposer
 
 
 class _ConcreteComposer(BaseTaskComposer):

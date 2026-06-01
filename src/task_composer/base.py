@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
-import xml.etree.ElementTree as ET
 
 
 @dataclass
@@ -63,9 +63,10 @@ class BaseTaskComposer(ABC):
     task_name: ClassVar[str]
 
     def __init__(self) -> None:
+        # Truthiness check intentionally rejects both missing and blank task_name
         if not getattr(type(self), "task_name", None):
             raise TypeError(
-                f"{type(self).__name__} must define a 'task_name' class variable"
+                f"{type(self).__name__} must define a non-empty 'task_name' class variable"
             )
 
     @abstractmethod
