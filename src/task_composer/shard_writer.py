@@ -32,6 +32,8 @@ class ShardWriter:
         shard_size: int = 1000,
         compress: bool = False,
     ) -> None:
+        if shard_size < 1:
+            raise ValueError(f"shard_size must be >= 1, got {shard_size}")
         self.out_dir = Path(out_dir)
         self.task_name = task_name
         self.shard_size = shard_size
@@ -73,7 +75,10 @@ class ShardWriter:
         return shard_paths
 
     def _encode(self, value: Any) -> bytes:
-        """Encode a payload value to bytes for tar entry storage."""
+        """Encode a payload value to bytes for tar entry storage.
+
+        Priority: bytes → verbatim, dict/list → UTF-8 JSON, anything else → str().encode().
+        """
         if isinstance(value, bytes):
             return value
         if isinstance(value, (dict, list)):
