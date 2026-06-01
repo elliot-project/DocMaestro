@@ -60,12 +60,13 @@ class CaptionPredictionComposer(BaseTaskComposer):
 
             caption_text = caption_el.text.strip()
 
-            # Find position of this element in the sibling list
+            # Find position of this element in the sibling list.
+            # None is unreachable: _CAPTIONABLE_TAGS and _SKIP_CONTEXT_TAGS are disjoint.
             sib_pos = next(
                 (i for i, (o, _) in enumerate(sibling_positions) if o == orig_idx),
                 None,
             )
-            if sib_pos is None:
+            if sib_pos is None:  # pragma: no cover
                 continue
 
             # Siblings excluding the target itself
