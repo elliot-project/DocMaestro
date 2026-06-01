@@ -127,6 +127,19 @@ class TestSampleStructure:
         samples = composer.compose_page(pages[0], ctx)
         assert "page zero context" in samples[0].payload["input.txt"]
 
+    def test_input_text_includes_title_elements(self, tmp_path):
+        title = ET.Element("title", {"bbox": "[0,0,600,30]", "level": "1"})
+        title.text = "Annual Report 2024"
+        pages = [
+            _make_page(0, figures=[_make_figure("images/p0.jpg")]),
+            _make_page(1, figures=[_make_figure("images/p1.jpg")]),
+            _make_page(2, figures=[_make_figure("images/p2.jpg")]),
+        ]
+        pages[0].insert(0, title)
+        _, ctx = _make_doc(pages, tmp_path)
+        samples = FigureSelectionComposer(n_distractors=2, seed=0).compose_page(pages[0], ctx)
+        assert "Annual Report 2024" in samples[0].payload["input.txt"]
+
     def test_json_metadata_task_type(self, tmp_path):
         pages, ctx = self._make_multi_page_doc(tmp_path)
         composer = FigureSelectionComposer(n_distractors=2, seed=0)
