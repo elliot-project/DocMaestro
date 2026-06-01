@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import io
 import json
 import tarfile
 from pathlib import Path
-
-import pytest
 
 from src.task_composer.base import Sample
 from src.task_composer.shard_writer import ShardWriter

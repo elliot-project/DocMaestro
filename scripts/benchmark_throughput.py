@@ -161,7 +161,7 @@ def _plot_latency(
     total_time = sum(r["total_s"] for r in records)
     mean_pps = total_pages / total_time if total_time > 0 else 0
     std_pps  = float(np.std(pps))
-    
+
     ax.axhline(mean_pps, color="#ffb74d", linewidth=2,
                label=f"mean {mean_pps:.2f} pages/sec")
     ax.axhspan(mean_pps - std_pps, mean_pps + std_pps,
@@ -412,7 +412,7 @@ def main() -> None:
 
     for rep in range(args.repeats):
         out_root = args.data_dir / "bench_sharded" / args.backend / f"bench_r{rep}"
-        
+
         if use_batching:
             for chunk in chunked(pdfs, args.batch_size):
                 print(f"  [{rep+1}/{args.repeats}] Batch processing {[p.name for p in chunk]} …", flush=True)
@@ -429,7 +429,7 @@ def main() -> None:
                     if isinstance(result, Exception):
                         print(f"  [error] {doc_name}: {result}")
                         continue
-                        
+
                     spp = result.duration_seconds / max(result.page_count, 1)
                     pps = max(result.page_count, 1) / result.duration_seconds
                     records.append({

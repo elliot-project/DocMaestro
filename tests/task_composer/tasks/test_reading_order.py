@@ -5,8 +5,6 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-import pytest
-
 from src.task_composer.base import DocumentContext
 from src.task_composer.tasks.reading_order import ReadingOrderComposer
 
