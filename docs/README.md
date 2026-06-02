@@ -16,6 +16,7 @@
 | [benchmarking.md](benchmarking.md) | WandB integration, logged metrics, throughput benchmark, GPU monitoring |
 | [cli-reference.md](cli-reference.md) | All CLI scripts — flags, defaults, usage examples |
 | [repository-structure.md](repository-structure.md) | Directory layout, module reference, file conventions, coding standards |
+| [task-composer.md](task-composer.md) | Task Composer module — SSL task generation, shard writing, extending with custom tasks |
 
 ---
 

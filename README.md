@@ -57,6 +57,7 @@ uv run main.py --pdf path/to/doc.pdf
 | Benchmarking & WandB metrics | docs/benchmarking.md |
 | CLI reference (all scripts) | docs/cli-reference.md |
 | Repository structure | docs/repository-structure.md |
+| Task Composer (SSL task generation) | docs/task-composer.md |
 
 ---
 
