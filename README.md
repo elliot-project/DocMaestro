@@ -1,23 +1,18 @@
 # OmniDocParser
 
-OmniDocParser is a high-performance document ingestion pipeline built on **MinerU2.5-Pro** (1.2B VLM). It converts PDFs and image-based documents into structured XML with bounding boxes and reading order, supports four extraction backends (rule-based, in-process VLM, hybrid, and HTTP client), and tracks every run — latency, GPU VRAM, XML stats — in **Weights & Biases**.
+A high-performance document ingestion pipeline built on **MinerU2.5-Pro** (1.2B VLM). Converts PDFs into structured XML with bounding boxes and reading order, supports four extraction backends, and tracks every run — latency, GPU VRAM, XML stats — in **Weights & Biases**.
+
+**Requirements:** Python 3.10–3.13 · CUDA 11.8+ · 24 GB VRAM minimum
 
 ---
 
 ## Quick Start
 
 ```bash
-# Install dependencies
 uv sync
-
-# Log in to WandB
 wandb login
-
-# Run extraction on a single PDF
 uv run main.py --pdf path/to/doc.pdf
 ```
-
-**Requirements:** Python 3.10–3.13, CUDA 11.8+, 24 GB VRAM minimum.
 
 ---
 
@@ -32,32 +27,28 @@ uv run main.py --pdf path/to/doc.pdf
 
 ---
 
-## Scripts at a Glance
+## Scripts
 
-| Script | Purpose |
-|---|---|
-| `main.py` | Primary pipeline orchestrator — single doc or batch, YAML-config driven |
-| `scripts/run_docvqa2026.py` | DocVQA-2026 HuggingFace dataset sweep |
-| `scripts/run_sharded.py` | Multi-GPU sharded launcher |
-| `scripts/benchmark_throughput.py` | GPU throughput benchmark |
-| `scripts/classify_figures.py` | Enrich XML `<figure>` elements with SigLIP2 categories |
-| `scripts/visualize.py` | Standalone visualizations from existing JSON |
+- [`main.py`](main.py) — Primary pipeline orchestrator, single doc or batch, YAML-config driven
+- [`scripts/run_docvqa2026.py`](scripts/run_docvqa2026.py) — DocVQA-2026 HuggingFace dataset sweep
+- [`scripts/run_sharded.py`](scripts/run_sharded.py) — Multi-GPU sharded launcher
+- [`scripts/benchmark_throughput.py`](scripts/benchmark_throughput.py) — GPU throughput benchmark
+- [`scripts/classify_figures.py`](scripts/classify_figures.py) — Enrich XML `<figure>` elements with SigLIP2 categories
+- [`scripts/visualize.py`](scripts/visualize.py) — Standalone visualizations from existing JSON
 
 ---
 
-## Navigation
+## Documentation
 
-| Topic | File |
-|---|---|
-| Overview & capabilities | docs/overview.md |
-| Architecture & data flow | docs/architecture.md |
-| Extraction backends & API | docs/extraction.md |
-| XML schema reference | docs/xml-schema.md |
-| Visualizations | docs/visualizations.md |
-| Benchmarking & WandB metrics | docs/benchmarking.md |
-| CLI reference (all scripts) | docs/cli-reference.md |
-| Repository structure | docs/repository-structure.md |
-| Task Composer (SSL task generation) | docs/task-composer.md |
+- [Overview & capabilities](docs/overview.md)
+- [Architecture & data flow](docs/architecture.md)
+- [Extraction backends & API](docs/extraction.md)
+- [XML schema reference](docs/xml-schema.md)
+- [Visualizations](docs/visualizations.md)
+- [Benchmarking & WandB metrics](docs/benchmarking.md)
+- [CLI reference](docs/cli-reference.md)
+- [Repository structure](docs/repository-structure.md)
+- [Task Composer — SSL task generation](docs/task-composer.md)
 
 ---
 
