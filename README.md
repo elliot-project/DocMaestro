@@ -1,4 +1,4 @@
-# OmniDocParser
+# DocMaestro
 
 A high-performance document ingestion pipeline built on **MinerU2.5-Pro** (1.2B VLM). Converts PDFs into structured XML with bounding boxes and reading order, supports four extraction backends, and tracks every run — latency, GPU VRAM, XML stats — in **Weights & Biases**.
 
