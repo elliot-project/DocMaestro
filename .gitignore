@@ -13,4 +13,6 @@ mineru_results/
 drafts/
 .env/
 .atl/
+.codegraph/
+.antigravity/
 
