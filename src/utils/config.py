@@ -19,6 +19,7 @@ class ExtractionConfig:
     server_url: str | None = None
     batch_size: int = 1
     window_size: int | None = None
+    gpu_memory_utilization: float | None = None
 
 
 @dataclass
@@ -117,6 +118,7 @@ def load_config(config_path: Path) -> PipelineConfig:
             server_url=extraction_raw.get("server_url", None),
             batch_size=extraction_raw.get("batch_size", 1),
             window_size=extraction_raw.get("window_size", None),
+            gpu_memory_utilization=extraction_raw.get("gpu_memory_utilization", None),
         ),
         title_aided=TitleAidedConfig(
             enabled=title_aided_raw.get("enabled", False),
@@ -163,7 +165,7 @@ def collect_pdfs(input_path: Path) -> list[Path]:
     """
     if input_path.is_file():
         return [input_path]
-    pdfs = sorted(input_path.glob("*.pdf"))
+    pdfs = sorted(input_path.rglob("*.pdf"))
     if not pdfs:
         raise ValueError(f"No PDF files found in {input_path}")
     return pdfs

@@ -211,6 +211,7 @@ def extract(
     server_url: str | None = None,
     title_aided_config: dict | None = None,
     gpu_memory_utilization: float | None = None,
+    tensor_parallel_size: int | None = None,
 ) -> ExtractionResult:
     """Run MinerU extraction on a PDF and return parsed outputs.
 
@@ -240,6 +241,11 @@ def extract(
             (0.5). Higher values increase batch capacity and throughput at the
             cost of VRAM headroom. Only used by in-process vLLM backends.
             No-op for the 'pipeline' backend (pipeline uses CV models, not vLLM).
+        tensor_parallel_size: Number of GPUs to split the model across via vLLM
+            tensor parallelism. Requires CUDA_VISIBLE_DEVICES to expose that many
+            GPUs (e.g. CUDA_VISIBLE_DEVICES=4,5 with tensor_parallel_size=2).
+            Passed directly to vllm.LLM(). No-op for http-client and pipeline
+            backends. None → vLLM default (1 GPU).
 
     Returns:
         ExtractionResult containing parsed JSON data and timing metadata.
@@ -276,6 +282,8 @@ def extract(
     vlm_kwargs: dict = {}
     if gpu_memory_utilization is not None:
         vlm_kwargs["gpu_memory_utilization"] = gpu_memory_utilization
+    if tensor_parallel_size is not None:
+        vlm_kwargs["tensor_parallel_size"] = tensor_parallel_size
 
     start_time = time.perf_counter()
     with _title_aided_patch(title_aided_config):
@@ -330,6 +338,7 @@ def batch_extract(
     language: str = "en",
     server_url: str | None = None,
     gpu_memory_utilization: float | None = None,
+    tensor_parallel_size: int | None = None,
 ) -> list[ExtractionResult | Exception]:
     """Run MinerU extraction on a batch of PDFs in a single do_parse call.
 
@@ -360,6 +369,8 @@ def batch_extract(
         language: OCR language hint applied to all documents.
         server_url: VLM server URL for http-client backends.
         gpu_memory_utilization: vLLM KV-cache fraction. No-op for pipeline.
+        tensor_parallel_size: GPUs to use for vLLM tensor parallelism. No-op
+            for pipeline and http-client backends.
 
     Returns:
         List aligned with pdf_paths: ExtractionResult on success, Exception
@@ -387,6 +398,8 @@ def batch_extract(
     vlm_kwargs: dict = {}
     if gpu_memory_utilization is not None:
         vlm_kwargs["gpu_memory_utilization"] = gpu_memory_utilization
+    if tensor_parallel_size is not None:
+        vlm_kwargs["tensor_parallel_size"] = tensor_parallel_size
 
     from mineru.cli.common import do_parse
 

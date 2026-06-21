@@ -1,0 +1,27 @@
+# ─────────────────────────────────────────────
+# OmniDocParser — Conference Papers Config
+# ─────────────────────────────────────────────
+
+extraction:
+  backend: hybrid-auto-engine
+  language: en
+  start_page: 0
+  end_page: null
+  server_url: null
+  gpu_memory_utilization: 0.85
+  window_size: 128
+
+paths:
+  data_dir: /data/151-1/users/mserrao/conference-papers
+  output_dir: /data/151-1/users/mserrao/conference-papers
+
+title_aided:
+  enabled: false
+
+figure_classification:
+  enabled: false
+  model: google/siglip2-base-patch16-384
+  batch_size: 32
+  device: cuda
+
+wandb_enabled: true

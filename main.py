@@ -25,7 +25,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
+import logging
 import os
 import sys
 import warnings
@@ -56,19 +56,49 @@ from src.xml_formatter import build_document_xml, save_document_xml  # noqa: E40
 _DEFAULT_CONFIG = Path("configs/extractor/default.yaml")
 
 
+# ── Logging noise suppression ────────────────────────────────────────────────
+
+
+def _suppress_noisy_logging() -> None:
+    """Suppress MinerU/vLLM internal logging clutter.
+
+    MinerU uses loguru for DEBUG messages and tqdm for internal progress bars
+    (Layout Predict, MFR Predict, OCR-det, Processing pages, etc.). These
+    flood the terminal when running large jobs. We suppress them here so only
+    our Rich progress bar is visible.
+    """
+    # Suppress loguru (MinerU's logger)
+    try:
+        from loguru import logger as loguru_logger
+        loguru_logger.remove()  # remove default stderr sink
+        # Re-add with WARNING level only so critical errors still surface
+        loguru_logger.add(sys.stderr, level="WARNING")
+    except ImportError:
+        pass
+
+    # Suppress standard library loggers from vLLM and MinerU
+    for name in [
+        "vllm",
+        "vllm.engine",
+        "vllm.worker",
+        "vllm.core",
+        "vllm.model_executor",
+        "mineru",
+        "mineru.backend",
+        "mineru.cli",
+        "mineru.utils",
+    ]:
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+    # Disable tqdm progress bars globally via environment variable.
+    # MinerU's internal code checks this.
+    os.environ["TQDM_DISABLE"] = "1"
+
+    # Suppress vLLM verbose progress bars
+    os.environ["VLLM_LOGGING_LEVEL"] = "WARNING"
+
+
 # ── Stage helpers ─────────────────────────────────────────────────────────────
-
-
-def _save_raw_json(result, data_dir: Path, doc_name: str, backend: str) -> None:
-    """Persist MinerU's middle.json and content_list.json to data/."""
-    raw_dir = data_dir / doc_name / backend
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    (raw_dir / f"{doc_name}_middle.json").write_text(
-        json.dumps(result.middle_json, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    (raw_dir / f"{doc_name}_content_list.json").write_text(
-        json.dumps(result.content_list, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
 
 
 def _find_img_root(extraction_output_dir: Path) -> Path:
@@ -116,7 +146,6 @@ def _enrich_figures(xml_path: Path, img_root: Path, cfg: FigureClassificationCon
 
     ET.indent(root, space="  ")
     tree.write(xml_path, encoding="utf-8", xml_declaration=True)
-    print(f"  [figure-clf] Classified {len(figures)} figures → {xml_path.name}")
 
 
 # ── Per-doc finalization ──────────────────────────────────────────────────────
@@ -126,6 +155,8 @@ def _finalize_document(
     pdf_path: Path,
     result: ExtractionResult,
     config: PipelineConfig,
+    root_dir: Path,
+    console=None,
     step: int = 0,
 ) -> None:
     """Save JSON, build XML, run figure-clf, and log WandB for one extracted doc.
@@ -134,13 +165,27 @@ def _finalize_document(
         pdf_path: Source PDF path.
         result: ExtractionResult from extract() or batch_extract().
         config: Full pipeline configuration.
+        root_dir: Base input directory to calculate relative path.
+        console: Rich Console for output (falls back to print if None).
         step: WandB step index for the current run.
     """
     ext = config.extraction
     doc_name = pdf_path.stem
-    xml_path = config.paths.output_dir / doc_name / f"{doc_name}_{ext.backend}.xml"
 
-    print(f"[{doc_name}] Extracted {result.page_count} pages in {result.duration_seconds:.1f}s")
+    if root_dir.is_file():
+        rel_dir = Path(doc_name)
+    else:
+        try:
+            rel_dir = pdf_path.relative_to(root_dir.resolve()).parent / doc_name
+        except ValueError:
+            rel_dir = Path(doc_name)
+
+    # XML sits alongside MinerU's native output: <conference>/<year>/<doc>/<doc>_backend.xml
+    xml_path = config.paths.output_dir / rel_dir / f"{doc_name}_{ext.backend}.xml"
+
+    _log = console.print if console else print
+
+    _log(f"  [green]✓[/green] {doc_name}: {result.page_count} pages in {result.duration_seconds:.1f}s")
 
     log_extraction_metrics(
         duration_seconds=result.duration_seconds,
@@ -150,25 +195,25 @@ def _finalize_document(
         content_item_count=len(result.content_list),
     )
     log_gpu_memory()
-    _save_raw_json(result, config.paths.data_dir, doc_name, ext.backend)
 
+    xml_path.parent.mkdir(parents=True, exist_ok=True)
     xml_str = build_document_xml(result.content_list, result.middle_json, doc_name)
     save_document_xml(xml_str, xml_path)
     log_xml_stats(xml_str, xml_path)
-    print(f"[{doc_name}] XML saved: {xml_path}")
 
     run = wandb.run
     if run is not None:
+        safe_name = f"{doc_name}-{ext.backend}"[:128]
         artifact = wandb.Artifact(
-            name=f"{doc_name}-{ext.backend}",
+            name=safe_name,
             type="document-xml",
-            description=f"Synthesized XML for {doc_name} using {ext.backend}",
+            description=f"Synthesized XML for {doc_name[:100]}... using {ext.backend}",
         )
         artifact.add_file(str(xml_path))
         run.log_artifact(artifact)
 
     if config.figure_classification.enabled:
-        print(f"[{doc_name}] Running figure classification")
+        _log(f"  [dim]Running figure classification for {doc_name}...[/dim]")
         img_root = _find_img_root(result.output_dir)
         _enrich_figures(xml_path, img_root, config.figure_classification)
 
@@ -218,6 +263,20 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     """Orchestrate the full pipeline for all input PDFs."""
+    # Suppress noise BEFORE importing/loading MinerU models
+    _suppress_noisy_logging()
+
+    from rich.console import Console
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        TimeElapsedColumn,
+        TimeRemainingColumn,
+    )
+
     args = parse_args()
     config = load_config(args.config)
 
@@ -236,17 +295,49 @@ def main() -> None:
     if ext.window_size:
         os.environ["MINERU_PROCESSING_WINDOW_SIZE"] = str(ext.window_size)
 
+    console = Console()
+
     pdfs = collect_pdfs(args.pdf)
-    print(
-        f"Found {len(pdfs)} PDF(s) | backend={ext.backend} | "
-        f"batch_size={ext.batch_size if use_batching else 1} | "
-        f"figure-clf={'on' if config.figure_classification.enabled else 'off'} | "
-        f"title-aided={'on' if config.title_aided.enabled else 'off'}"
-    )
+
+    # ── Resume logic: skip already-processed docs ──
+    total_found = len(pdfs)
+    skipped = 0
+    unprocessed_pdfs = []
+    for pdf_path in pdfs:
+        doc_name = pdf_path.stem
+        if args.pdf.is_file():
+            rel_dir = Path(doc_name)
+        else:
+            try:
+                rel_dir = pdf_path.relative_to(args.pdf.resolve()).parent / doc_name
+            except ValueError:
+                rel_dir = Path(doc_name)
+        xml_path = config.paths.output_dir / rel_dir / f"{doc_name}_{ext.backend}.xml"
+        if xml_path.exists():
+            skipped += 1
+        else:
+            unprocessed_pdfs.append(pdf_path)
+
+    pdfs = unprocessed_pdfs
+
+    console.rule("[bold blue]OmniDocParser[/bold blue]")
+    console.print(f"  Total PDFs found:   [bold]{total_found}[/bold]")
+    if skipped:
+        console.print(f"  Already processed:  [yellow]{skipped} (skipped)[/yellow]")
+    console.print(f"  Remaining to do:    [bold green]{len(pdfs)}[/bold green]")
+    console.print(f"  Backend:            {ext.backend}")
+    console.print(f"  GPU mem utilization: {ext.gpu_memory_utilization or 'default'}")
+    console.print(f"  Window size:        {ext.window_size or 'default'}")
+    console.print()
+
+    if not pdfs:
+        console.print("[bold green]✓ All documents have been processed. Nothing to do.[/bold green]")
+        return
+
     if ext.batch_size > 1 and ext.backend != "pipeline":
-        print(
-            f"  [info] batch_size={ext.batch_size} ignored — "
-            f"batching only improves throughput for the pipeline backend."
+        console.print(
+            f"  [yellow]⚠ batch_size={ext.batch_size} ignored — "
+            f"batching only improves throughput for the pipeline backend.[/yellow]\n"
         )
 
     init_run(
@@ -262,47 +353,114 @@ def main() -> None:
         },
     )
 
-    try:
-        if use_batching:
-            # ── Batched pipeline path ─────────────────────────────────────────
-            # batch_extract passes N PDFs to one do_parse call so the streaming
-            # window can batch pages across docs simultaneously.
-            for chunk in chunked(pdfs, ext.batch_size):
-                print(f"\nBatch extracting: {[p.name for p in chunk]}")
-                log_gpu_memory()
-                chunk_results = batch_extract(
-                    pdf_paths=chunk,
-                    output_dir=config.paths.data_dir,
-                    backend=ext.backend,
-                    language=ext.language,
-                )
-                for pdf_path, result in zip(chunk, chunk_results):
-                    if isinstance(result, Exception):
-                        print(f"[{pdf_path.stem}] FAILED: {result}")
-                        wandb.log({"error": str(result), "doc": pdf_path.name})
-                        continue
-                    _finalize_document(pdf_path, result, config)
-        else:
-            # ── Per-document path (hybrid / VLM / single-doc pipeline) ────────
-            for i, pdf_path in enumerate(pdfs):
-                doc_name = pdf_path.stem
-                print(f"\n[{doc_name}] Extracting with backend={ext.backend}")
-                log_gpu_memory()
+    failed_docs: list[tuple[str, str]] = []
 
-                result = extract(
-                    pdf_path=pdf_path,
-                    output_dir=config.paths.data_dir / doc_name / ext.backend,
-                    backend=ext.backend,
-                    language=ext.language,
-                    start_page=ext.start_page,
-                    end_page=ext.end_page,
-                    server_url=ext.server_url,
-                    title_aided_config=config.title_aided.as_mineru_config(),
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=40),
+            MofNCompleteColumn(),
+            TextColumn("•"),
+            TimeElapsedColumn(),
+            TextColumn("•"),
+            TimeRemainingColumn(),
+            console=console,
+            transient=False,
+        ) as progress:
+            if use_batching:
+                # ── Batched pipeline path ─────────────────────────────────────
+                task = progress.add_task(
+                    "[cyan]Extracting (batch)...", total=len(pdfs)
                 )
-                _finalize_document(pdf_path, result, config, step=i)
+                for chunk in chunked(pdfs, ext.batch_size):
+                    try:
+                        chunk_results = batch_extract(
+                            pdf_paths=chunk,
+                            output_dir=config.paths.data_dir,
+                            backend=ext.backend,
+                            language=ext.language,
+                            gpu_memory_utilization=ext.gpu_memory_utilization,
+                        )
+                    except Exception as exc:
+                        for p in chunk:
+                            failed_docs.append((p.stem, str(exc)))
+                            progress.console.print(
+                                f"  [red]✗[/red] {p.stem}: {exc}"
+                            )
+                        progress.advance(task, advance=len(chunk))
+                        continue
+
+                    for pdf_path, result in zip(chunk, chunk_results):
+                        if isinstance(result, Exception):
+                            failed_docs.append((pdf_path.stem, str(result)))
+                            progress.console.print(
+                                f"  [red]✗[/red] {pdf_path.stem}: {result}"
+                            )
+                            wandb.log({"error": str(result), "doc": pdf_path.name})
+                        else:
+                            _finalize_document(
+                                pdf_path, result, config, args.pdf,
+                                console=progress.console,
+                            )
+                    progress.advance(task, advance=len(chunk))
+            else:
+                # ── Per-document path (hybrid / VLM / single-doc pipeline) ───
+                task = progress.add_task(
+                    "[cyan]Extracting...", total=len(pdfs)
+                )
+                for i, pdf_path in enumerate(pdfs):
+                    doc_name = pdf_path.stem
+                    if args.pdf.is_file():
+                        rel_dir = Path(doc_name)
+                    else:
+                        try:
+                            rel_dir = pdf_path.relative_to(args.pdf.resolve()).parent / doc_name
+                        except ValueError:
+                            rel_dir = Path(doc_name)
+
+                    progress.update(task, description=f"[cyan]{doc_name[:60]}...")
+
+                    try:
+                        # Pass the parent dir so MinerU creates <doc>/hybrid_auto/ inside
+                        result = extract(
+                            pdf_path=pdf_path,
+                            output_dir=config.paths.data_dir / rel_dir.parent,
+                            backend=ext.backend,
+                            language=ext.language,
+                            start_page=ext.start_page,
+                            end_page=ext.end_page,
+                            server_url=ext.server_url,
+                            title_aided_config=config.title_aided.as_mineru_config(),
+                            gpu_memory_utilization=ext.gpu_memory_utilization,
+                        )
+                    except Exception as exc:
+                        failed_docs.append((doc_name, str(exc)))
+                        progress.console.print(
+                            f"  [red]✗[/red] {doc_name}: {exc}"
+                        )
+                        progress.advance(task)
+                        continue
+
+                    _finalize_document(
+                        pdf_path, result, config, args.pdf,
+                        console=progress.console, step=i,
+                    )
+                    progress.advance(task)
 
     finally:
         wandb.finish()
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    console.print()
+    console.rule("[bold blue]Summary[/bold blue]")
+    console.print(f"  Processed: [green]{len(pdfs) - len(failed_docs)}[/green]")
+    if failed_docs:
+        console.print(f"  Failed:    [red]{len(failed_docs)}[/red]")
+        for name, reason in failed_docs:
+            console.print(f"    [red]✗[/red] {name}: {reason[:120]}")
+    else:
+        console.print("  [bold green]All documents processed successfully![/bold green]")
 
 
 if __name__ == "__main__":
