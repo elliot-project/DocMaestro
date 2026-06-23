@@ -119,14 +119,18 @@
   .sample-meta { color: var(--muted); font-size: 11px; }
   .view-badge  { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600; letter-spacing: 0.04em; }
 
-  /* ── CARD BODY: page panel + task content ────────────────────────── */
-  .card-body { display: flex; min-height: 400px; }
+  /* ── CARD BODY: task content (top) then full-width page (bottom) ─── */
+  .card-body { display: flex; flex-direction: column; }
 
-  /* Page preview panel */
+  /* Task content panel — sits above the page, scrollable */
+  .task-panel { max-height: 310px; overflow-y: auto; }
+
+  /* Page preview panel — full width, tall */
   .page-panel {
-    width: var(--page-panel-w);
+    width: 100%;
+    height: 560px;
     flex-shrink: 0;
-    border-right: 1px solid var(--border);
+    border-top: 1px solid var(--border);
     display: flex;
     flex-direction: column;
     background: #0a0c14;
@@ -152,14 +156,13 @@
   .legend-item { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--muted); }
   .legend-dot  { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 
-  .canvas-scroll { flex: 1; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 8px; }
-  .canvas-scroll canvas { max-width: 100%; display: block; border-radius: 3px; cursor: crosshair; }
+  .canvas-scroll { flex: 1; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 10px; background: #070810; }
+  .canvas-scroll canvas { max-width: 100%; max-height: none; display: block; border-radius: 3px; cursor: crosshair; box-shadow: 0 4px 24px rgba(0,0,0,0.6); }
 
   .page-loading { color: var(--muted); font-size: 11px; padding: 20px; text-align: center; }
   .page-no-pdf  { color: var(--muted); font-size: 11px; padding: 20px; text-align: center; opacity: 0.6; }
 
-  /* Task content panel */
-  .task-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+  /* (task-panel max-height is set in card-body block above) */
 
   /* ── INNER SPLIT ─────────────────────────────────────────────────── */
   .panel-split { display: flex; flex: 1; overflow: hidden; }
@@ -506,8 +509,17 @@ async function renderPageCanvas(s) {
   // Load page image
   const img = new Image();
   img.onload = () => {
+    // Draw at the panel's display width for a big, crisp render
+    const scroll   = document.getElementById('canvas-scroll');
+    const panelW   = scroll ? scroll.clientWidth - 20 : img.naturalWidth;
+    const aspect   = img.naturalHeight / img.naturalWidth;
+    const drawW    = Math.min(img.naturalWidth, panelW);
+    const drawH    = Math.round(drawW * aspect);
+
     canvas.width  = img.naturalWidth;
     canvas.height = img.naturalHeight;
+    canvas.style.width  = drawW + 'px';
+    canvas.style.height = drawH + 'px';
 
     const scaleX = img.naturalWidth  / s.page_width;
     const scaleY = img.naturalHeight / s.page_height;
@@ -633,10 +645,10 @@ function renderSample() {
       <span class="sample-meta">${esc(s.task_name)}${pageInfo}</span>
     </div>
     <div class="card-body">
+      <div class="task-panel">${taskContent}</div>
       <div class="page-panel" id="page-panel">
         <div class="page-loading"><span class="spinner"></span>Loading page…</div>
       </div>
-      <div class="task-panel">${taskContent}</div>
     </div>`;
 
   renderPageCanvas(s);
