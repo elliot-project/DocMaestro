@@ -125,10 +125,11 @@
   /* Task content panel — sits above the page, scrollable */
   .task-panel { max-height: 310px; overflow-y: auto; }
 
-  /* Page preview panel — full width, tall */
+  /* Page preview panel — full width, flexible height */
   .page-panel {
     width: 100%;
-    height: 560px;
+    flex: 1;
+    min-height: 400px;
     flex-shrink: 0;
     border-top: 1px solid var(--border);
     display: flex;
@@ -513,7 +514,7 @@ async function renderPageCanvas(s) {
     const scroll   = document.getElementById('canvas-scroll');
     const panelW   = scroll ? scroll.clientWidth - 20 : img.naturalWidth;
     const aspect   = img.naturalHeight / img.naturalWidth;
-    const drawW    = Math.min(img.naturalWidth, panelW);
+    const drawW    = panelW; // Always scale to full available width
     const drawH    = Math.round(drawW * aspect);
 
     canvas.width  = img.naturalWidth;
