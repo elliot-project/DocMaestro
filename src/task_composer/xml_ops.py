@@ -194,7 +194,8 @@ def mutate_tree(xml_str: str, rng: random.Random) -> str:
         root.remove(rng.choice(children))
     elif mutation == "retag":
         victim = rng.choice(children)
-        victim.tag = rng.choice(["text-block", "title", "figure", "table"])
+        candidates = [t for t in ["text-block", "title", "figure", "table"] if t != victim.tag]
+        victim.tag = rng.choice(candidates) if candidates else "title"
     else:  # shuffle
         rng.shuffle(children)
         for child in list(root):
