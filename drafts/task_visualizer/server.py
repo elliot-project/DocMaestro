@@ -12,6 +12,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ast
 import sys
 import warnings
 import xml.etree.ElementTree as ET
@@ -59,7 +60,6 @@ _pdf_cache: dict[str, fitz.Document | None] = {}
 
 
 def _find_img_root(rel_folder: str) -> Path | None:
-    """Return the parent of the best images/ directory for a doc folder."""
     search_base = DATA_DIR / rel_folder
     best: Path | None = None
     best_count = 0
@@ -157,7 +157,55 @@ def _get_pdf(doc_id: str) -> fitz.Document | None:
     return _pdf_cache[doc_id]
 
 
-# ── Per-view-type serializers ──────────────────────────────────────────────────
+# ── XML helpers ────────────────────────────────────────────────────────────────
+
+
+def _parse_bbox(bbox_str: str | None) -> list[float] | None:
+    """Parse a bbox string like '[x1, y1, x2, y2]' into a list of 4 floats."""
+    if not bbox_str:
+        return None
+    try:
+        v = ast.literal_eval(bbox_str)
+        if isinstance(v, (list, tuple)) and len(v) == 4:
+            return [float(x) for x in v]
+    except Exception:
+        pass
+    return None
+
+
+def _get_page_el(xml_root: ET.Element, page_idx: int) -> ET.Element | None:
+    for page in xml_root:
+        if page.attrib.get("idx") == str(page_idx):
+            return page
+    return None
+
+
+def _page_dims(xml_root: ET.Element, page_idx: int | None) -> tuple[float, float]:
+    if page_idx is None:
+        return 0.0, 0.0
+    page = _get_page_el(xml_root, page_idx)
+    if page is None:
+        return 0.0, 0.0
+    return float(page.attrib.get("width", 0)), float(page.attrib.get("height", 0))
+
+
+def _all_page_elements(xml_root: ET.Element, page_idx: int) -> list[dict]:
+    """Return all direct child elements of a page that carry a bbox."""
+    page = _get_page_el(xml_root, page_idx)
+    if page is None:
+        return []
+    result = []
+    for el in page:
+        bbox = _parse_bbox(el.attrib.get("bbox"))
+        if bbox:
+            result.append(
+                {
+                    "tag": el.tag,
+                    "bbox": bbox,
+                    "text": (el.text or "").strip()[:80],
+                }
+            )
+    return result
 
 
 def _img_url(doc_id: str, src: str) -> str:
@@ -174,21 +222,141 @@ def _find_img_src(xml_root: ET.Element, page_idx: int, element_tag: str, bbox: s
     return None
 
 
+# ── Highlight bbox builders ────────────────────────────────────────────────────
+# Each returns a list of {bbox: [x1,y1,x2,y2], color: str, label: str}
+
+
+def _hl(bbox_str: str | None, color: str, label: str = "") -> dict | None:
+    b = _parse_bbox(bbox_str)
+    return {"bbox": b, "color": color, "label": label} if b else None
+
+
+def _build_highlights(
+    view_type: str, sample, p: dict, meta: dict, xml_root: ET.Element
+) -> list[dict]:
+    """Build the highlight_bboxes list for the page canvas overlay."""
+    page_idx = meta.get("page_idx")
+    highlights: list[dict] = []
+
+    if view_type == "caption":
+        h = _hl(meta.get("bbox"), "#50E3C2", meta.get("element_tag", ""))
+        if h:
+            highlights.append(h)
+
+    elif view_type == "bbox_overlay":
+        blocks = p.get("target.json", [])
+        color = "#F5A623"  # OCR/layout = orange
+        for b in blocks:
+            h = _hl(b.get("bbox"), color, b.get("tag", ""))
+            if h:
+                highlights.append(h)
+
+    elif view_type == "reading_order":
+        # Shuffled items have {idx, tag, text} but no bbox.
+        # Recover bboxes by matching tag+text against the XML page.
+        if page_idx is not None:
+            page = _get_page_el(xml_root, page_idx)
+            if page is not None:
+                shuffled = p.get("input.json", [])
+                colors = [
+                    "#4A90E2",
+                    "#7ED321",
+                    "#BD10E0",
+                    "#F5A623",
+                    "#50E3C2",
+                    "#E91E8C",
+                    "#FF7043",
+                    "#00BCD4",
+                    "#B388FF",
+                    "#F5E642",
+                ]
+                for item in shuffled:
+                    # Match by tag and truncated text
+                    target_text = item.get("text", "")
+                    for el in page:
+                        if el.tag == item.get("tag"):
+                            el_text = (el.text or "").strip()[:120]
+                            if el_text == target_text and "bbox" in el.attrib:
+                                col = colors[item["idx"] % len(colors)]
+                                h = _hl(el.attrib["bbox"], col, str(item["idx"]))
+                                if h:
+                                    highlights.append(h)
+                                break
+
+    elif view_type == "image_grid":
+        # Highlight all figures on the page; green = correct, dim = distractor
+        if page_idx is not None:
+            candidates = meta.get("candidates", [])
+            page = _get_page_el(xml_root, page_idx)
+            if page is not None:
+                fig_els = [el for el in page if el.tag == "figure" and "bbox" in el.attrib]
+                for i, el in enumerate(fig_els):
+                    # Try to match with candidate by src
+                    is_correct = i < len(candidates) and candidates[i].get("is_correct")
+                    col = "#7ED321" if is_correct else "#78909C"
+                    h = _hl(el.attrib["bbox"], col, "✓" if is_correct else "")
+                    if h:
+                        highlights.append(h)
+
+    elif view_type == "canvas_layout":
+        # Highlight target bboxes
+        bboxes = p.get("target.json", [])
+        colors = [
+            "#4A90E2",
+            "#7ED321",
+            "#BD10E0",
+            "#F5A623",
+            "#50E3C2",
+            "#E91E8C",
+            "#FF7043",
+            "#00BCD4",
+        ]
+        for i, bbox_str in enumerate(bboxes):
+            h = _hl(bbox_str, colors[i % len(colors)], str(i))
+            if h:
+                highlights.append(h)
+
+    elif view_type in ("text", "markdown", "xml_tree", "xml_diff"):
+        # Light highlight of all elements — use one neutral colour
+        if page_idx is not None:
+            for el_info in _all_page_elements(xml_root, page_idx):
+                highlights.append(
+                    {
+                        "bbox": el_info["bbox"],
+                        "color": "#4A90E2",
+                        "label": "",
+                    }
+                )
+
+    return highlights
+
+
+# ── Sample serialization ───────────────────────────────────────────────────────
+
+
 def _serialize_sample(
     sample, task_name: str, view_type: str, doc_id: str, xml_root: ET.Element
 ) -> dict:
-    """Dispatch serialization based on view_type, returning a frontend-ready dict."""
     p = sample.payload
     meta = p.get("json", {})
+    page_idx = meta.get("page_idx")
+
+    # Page geometry
+    pw, ph = _page_dims(xml_root, page_idx)
+    highlights = _build_highlights(view_type, sample, p, meta, xml_root)
 
     base = {
         "key": sample.key,
         "task_name": task_name,
         "view_type": view_type,
-        "page_idx": meta.get("page_idx"),
+        "page_idx": page_idx,
+        "page_width": pw,
+        "page_height": ph,
+        "highlight_bboxes": highlights,
+        "has_page": page_idx is not None and pw > 0,
     }
 
-    if view_type == "image_grid":  # figure_selection
+    if view_type == "image_grid":
         label = p["target.json"]["label"]
         return {
             **base,
@@ -204,9 +372,9 @@ def _serialize_sample(
             ],
         }
 
-    elif view_type == "caption":  # caption_prediction
+    elif view_type == "caption":
         img_src = _find_img_src(
-            xml_root, meta.get("page_idx", -1), meta.get("element_tag", ""), meta.get("bbox", "")
+            xml_root, page_idx or -1, meta.get("element_tag", ""), meta.get("bbox", "")
         )
         return {
             **base,
@@ -218,7 +386,7 @@ def _serialize_sample(
             "image_url": _img_url(doc_id, img_src) if img_src else None,
         }
 
-    elif view_type == "reading_order":  # reading_order
+    elif view_type == "reading_order":
         return {
             **base,
             "n_elements": meta.get("n_elements"),
@@ -226,22 +394,22 @@ def _serialize_sample(
             "target": p.get("target.json", []),
         }
 
-    elif view_type == "text":  # basic_reading
+    elif view_type == "text":
         return {**base, "text": p.get("target.txt", "")}
 
-    elif view_type == "bbox_overlay":  # ocr / layout
+    elif view_type == "bbox_overlay":
         return {**base, "blocks": p.get("target.json", [])}
 
-    elif view_type == "markdown":  # markdown
+    elif view_type == "markdown":
         return {**base, "markdown": p.get("target.txt", "")}
 
-    elif view_type == "xml_tree":  # page_tree
+    elif view_type == "xml_tree":
         return {**base, "xml": p.get("target.txt", "")}
 
-    elif view_type == "xml_diff":  # dom_edition
+    elif view_type == "xml_diff":
         return {**base, "input_xml": p.get("input.txt", ""), "target_xml": p.get("target.txt", "")}
 
-    elif view_type == "page_sequence":  # page_sorting
+    elif view_type == "page_sequence":
         return {
             **base,
             "n_pages": meta.get("n_pages"),
@@ -249,10 +417,10 @@ def _serialize_sample(
             "target": p.get("target.json", []),
         }
 
-    elif view_type == "canvas_layout":  # doc_reconstruction
+    elif view_type == "canvas_layout":
         return {**base, "elements": p.get("input.json", []), "target": p.get("target.json", [])}
 
-    elif view_type == "figure_page_map":  # figure_ordering
+    elif view_type == "figure_page_map":
         inp = p.get("input.json", {})
         return {
             **base,
@@ -261,7 +429,7 @@ def _serialize_sample(
             "target": p.get("target.json", []),
         }
 
-    elif view_type == "kv_form":  # form_filling
+    elif view_type == "kv_form":
         return {
             **base,
             "fields": p.get("target.json", {}).get("fields", []),
@@ -269,7 +437,6 @@ def _serialize_sample(
             "height": meta.get("height"),
         }
 
-    # Fallback: dump raw payload keys (excluding __key__)
     return {**base, "raw": {k: v for k, v in p.items() if k != "__key__"}}
 
 
@@ -281,7 +448,6 @@ def generate_samples(doc_id: str, task_name: str) -> list[dict]:
     reg = get_registry()
     if doc_id not in reg:
         raise HTTPException(404, f"Doc '{doc_id}' not found")
-
     if task_name not in task_registry.REGISTRY:
         raise HTTPException(400, f"Unknown task '{task_name}'")
 
@@ -320,7 +486,6 @@ def root():
 
 @app.get("/api/tasks")
 def list_tasks():
-    """Return all registered tasks with their view_type and description."""
     return [
         {"task_name": s.task_name, "view_type": s.view_type, "description": s.description}
         for s in task_registry.list_tasks()
@@ -350,6 +515,15 @@ def list_docs():
 def get_samples(doc_id: str, task_name: str):
     samples = generate_samples(doc_id, task_name)
     return {"task_name": task_name, "total": len(samples), "samples": samples}
+
+
+@app.get("/api/docs/{doc_id}/pages/{page_idx}/elements")
+def page_elements(doc_id: str, page_idx: int):
+    """Return all bbox-bearing elements on a page for the grey background layer."""
+    xml_root = _get_xml(doc_id)
+    elements = _all_page_elements(xml_root, page_idx)
+    pw, ph = _page_dims(xml_root, page_idx)
+    return {"page_idx": page_idx, "page_width": pw, "page_height": ph, "elements": elements}
 
 
 @app.get("/api/docs/{doc_id}/pages/{page_idx}/image")
