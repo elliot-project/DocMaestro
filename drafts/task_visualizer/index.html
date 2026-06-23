@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DocTask Visualizer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0f1117;
+    --surface:  #1a1d27;
+    --surface2: #222536;
+    --surface3: #2a2d42;
+    --border:   #2a2d3d;
+    --accent:   #4A90E2;
+    --green:    #7ED321;
+    --red:      #D0021B;
+    --orange:   #F5A623;
+    --purple:   #BD10E0;
+    --teal:     #50E3C2;
+    --yellow:   #F5E642;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --sidebar-w: 240px;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+    font-size: 13px;
+  }
+
+  /* ── SIDEBAR ─────────────────────────────────────────────────────── */
+  #sidebar {
+    width: var(--sidebar-w);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  #sidebar-header {
+    padding: 12px 14px 8px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  #sidebar-header h1 {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--text);
+  }
+
+  #sidebar-header p {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  #doc-search {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  #doc-search input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 5px 8px;
+    font-size: 12px;
+    outline: none;
+  }
+  #doc-search input:focus { border-color: var(--accent); }
+
+  #doc-list { overflow-y: auto; flex: 1; }
+
+  .doc-item {
+    padding: 9px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  .doc-item:hover  { background: var(--surface2); }
+  .doc-item.active { background: #1e2a45; border-left: 3px solid var(--accent); padding-left: 11px; }
+
+  .doc-name { font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .doc-meta  { color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+  /* ── MAIN ──────────────────────────────────────────────────────────── */
+  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* Toolbar */
+  #toolbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+
+  #task-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+
+  .tab {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.12s;
+    white-space: nowrap;
+  }
+  .tab:hover  { border-color: var(--accent); color: var(--text); }
+  .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+  /* view_type colour dots */
+  .tab-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+
+  #nav { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+  #nav button {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.1s;
+  }
+  #nav button:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
+  #nav button:disabled { opacity: 0.35; cursor: default; }
+
+  #sample-counter { color: var(--muted); font-size: 12px; min-width: 70px; text-align: center; }
+
+  /* Content */
+  #content { flex: 1; overflow-y: auto; padding: 16px; }
+
+  .state-msg { color: var(--muted); font-size: 14px; margin-top: 60px; text-align: center; }
+
+  /* ── SAMPLE CARD ─────────────────────────────────────────────────── */
+  #sample-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .sample-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    background: var(--surface2);
+  }
+
+  .sample-key  { font-family: monospace; font-size: 12px; color: var(--accent); }
+  .sample-meta { color: var(--muted); font-size: 11px; }
+
+  .view-type-badge {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    background: rgba(74,144,226,0.15);
+    color: var(--accent);
+  }
+
+  /* ── SPLIT LAYOUT ────────────────────────────────────────────────── */
+  .panel-split { display: flex; min-height: 300px; }
+
+  .panel-left, .panel-right { flex: 1; padding: 16px; overflow-y: auto; }
+  .panel-left { border-right: 1px solid var(--border); }
+  .panel-full { padding: 16px; }
+
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+
+  /* ── SHARED COMPONENTS ────────────────────────────────────────────── */
+  .text-block {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text);
+    white-space: pre-wrap;
+    max-height: 420px;
+    overflow-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  .code-block {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #a5d6ff;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    max-height: 420px;
+    overflow-y: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  .list-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 8px;
+    background: var(--surface2);
+    border-radius: 4px;
+    margin-bottom: 4px;
+    font-size: 12px;
+  }
+  .list-num  { font-family: monospace; font-size: 11px; color: var(--muted); min-width: 22px; padding-top: 1px; }
+  .list-text { color: var(--text); line-height: 1.4; flex: 1; }
+
+  /* Tag badges */
+  .tag-badge {
+    font-size: 10px; padding: 2px 6px; border-radius: 3px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .tag-title         { background: rgba(74,144,226,0.2);   color: #4A90E2; }
+  .tag-text-block    { background: rgba(126,211,33,0.15);  color: #7ED321; }
+  .tag-figure        { background: rgba(189,16,224,0.2);   color: #BD10E0; }
+  .tag-chart         { background: rgba(233,30,140,0.2);   color: #E91E8C; }
+  .tag-table         { background: rgba(245,166,35,0.2);   color: #F5A623; }
+  .tag-caption       { background: rgba(80,227,194,0.15);  color: #50E3C2; }
+  .tag-math-block    { background: rgba(184,134,11,0.2);   color: #d4a017; }
+  .tag-code-block    { background: rgba(0,188,212,0.15);   color: #00BCD4; }
+  .tag-default       { background: rgba(120,144,156,0.2);  color: #78909C; }
+
+  /* Image grid */
+  .candidates-grid { display: flex; gap: 12px; flex-wrap: wrap; }
+  .candidate {
+    flex: 1; min-width: 120px; max-width: 220px;
+    border: 2px solid var(--border); border-radius: 6px;
+    overflow: hidden; transition: border-color 0.15s;
+  }
+  .candidate.correct   { border-color: var(--green); }
+  .candidate.distractor { opacity: 0.6; }
+  .candidate img { width: 100%; height: 160px; object-fit: contain; background: #111; display: block; }
+  .candidate-label { padding: 6px 8px; font-size: 11px; background: var(--surface2); }
+  .candidate.correct .candidate-label   { color: var(--green); font-weight: 600; }
+  .candidate.distractor .candidate-label { color: var(--muted); }
+  .no-img { width: 100%; height: 160px; background: #111; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; }
+
+  /* Caption */
+  .element-img { max-width: 100%; max-height: 300px; object-fit: contain; border: 1px solid var(--border); border-radius: 4px; background: #111; display: block; margin-bottom: 10px; }
+  .context-item { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; background: var(--surface2); border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
+  .context-text { color: var(--text); line-height: 1.4; flex: 1; }
+  .gt-box { background: rgba(80,227,194,0.08); border: 1px solid var(--teal); border-radius: 6px; padding: 12px; font-size: 13px; line-height: 1.6; color: var(--text); margin-top: 4px; }
+  .bbox-label { font-family: monospace; font-size: 11px; color: var(--muted); }
+
+  /* BBox overlay */
+  .bbox-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 10px; background: var(--surface2); border-radius: 4px; margin-bottom: 3px; font-size: 12px; }
+  .bbox-coord { font-family: monospace; font-size: 10px; color: var(--muted); flex-shrink: 0; }
+
+  /* XML tree / diff */
+  .xml-panel { display: flex; gap: 0; min-height: 300px; }
+  .xml-panel .half { flex: 1; padding: 16px; overflow: auto; border-right: 1px solid var(--border); }
+  .xml-panel .half:last-child { border-right: none; }
+
+  /* Page sequence */
+  .page-seq { display: flex; flex-direction: column; gap: 6px; }
+  .page-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 8px 12px; font-size: 12px; display: flex; gap: 10px; align-items: center; }
+  .page-pos  { font-family: monospace; color: var(--muted); min-width: 26px; }
+  .page-arrow { color: var(--muted); }
+
+  /* Canvas layout */
+  .canvas-item { display: flex; gap: 8px; align-items: flex-start; padding: 6px 10px; background: var(--surface2); border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
+  .canvas-idx  { font-family: monospace; font-size: 11px; color: var(--muted); min-width: 22px; }
+  .canvas-bbox { font-family: monospace; font-size: 10px; color: var(--teal); flex-shrink: 0; }
+
+  /* Figure page map */
+  .fig-item { display: flex; gap: 10px; align-items: center; padding: 7px 10px; background: var(--surface2); border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
+  .fig-src  { font-family: monospace; font-size: 11px; color: var(--accent); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fig-page { font-family: monospace; font-size: 11px; color: var(--yellow); background: rgba(245,230,66,0.1); padding: 2px 6px; border-radius: 3px; }
+
+  /* KV form */
+  .kv-item { display: flex; gap: 10px; align-items: center; padding: 7px 10px; background: var(--surface2); border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
+  .kv-cat  { font-weight: 600; color: var(--teal); min-width: 120px; }
+  .kv-bbox { font-family: monospace; font-size: 10px; color: var(--muted); }
+
+  /* Markdown render */
+  .md-render { padding: 16px; font-size: 13px; line-height: 1.7; color: var(--text); }
+  .md-render h1, .md-render h2, .md-render h3 { color: var(--accent); margin: 12px 0 6px; }
+  .md-render p  { margin-bottom: 8px; }
+  .md-render pre { background: #0d1117; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; overflow-x: auto; margin-bottom: 8px; }
+  .md-render img { max-width: 100%; border-radius: 4px; margin: 6px 0; }
+
+  /* Spinner */
+  .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Empty pill */
+  .empty-pill { display: inline-block; color: var(--muted); font-size: 11px; font-style: italic; }
+</style>
+</head>
+<body>
+
+<!-- ── SIDEBAR ───────────────────────────────────────────────────────────── -->
+<aside id="sidebar">
+  <div id="sidebar-header">
+    <h1>DocTask Visualizer</h1>
+    <p id="doc-count">Loading…</p>
+  </div>
+  <div id="doc-search">
+    <input id="search-input" type="text" placeholder="Filter documents…">
+  </div>
+  <div id="doc-list"></div>
+</aside>
+
+<!-- ── MAIN ──────────────────────────────────────────────────────────────── -->
+<main id="main">
+
+  <div id="toolbar">
+    <div id="task-tabs"></div>
+    <div id="nav">
+      <button id="prev-btn" disabled>◄</button>
+      <span id="sample-counter">—</span>
+      <button id="next-btn" disabled>►</button>
+    </div>
+  </div>
+
+  <div id="content">
+    <p class="state-msg" id="empty-state">Select a document from the sidebar.</p>
+    <p class="state-msg" id="loading-state" style="display:none">
+      <span class="spinner"></span>Generating samples…
+    </p>
+    <p class="state-msg" id="error-state" style="display:none"></p>
+    <p class="state-msg" id="no-samples-state" style="display:none">
+      No samples for this task on this document.
+    </p>
+    <div id="sample-card" style="display:none"></div>
+  </div>
+
+</main>
+
+<script>
+// ── Constants ─────────────────────────────────────────────────────────────────
+const VIEW_COLORS = {
+  text:           '#7ED321',
+  bbox_overlay:   '#F5A623',
+  markdown:       '#4A90E2',
+  xml_tree:       '#50E3C2',
+  xml_diff:       '#BD10E0',
+  image_grid:     '#E91E8C',
+  page_sequence:  '#F5E642',
+  canvas_layout:  '#FF7043',
+  figure_page_map:'#00BCD4',
+  kv_form:        '#B388FF',
+  caption:        '#50E3C2',
+  reading_order:  '#7ED321',
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let allDocs    = [];
+let allTasks   = [];
+let activeDocId  = null;
+let activeTask   = null;
+let samples      = [];
+let sampleIdx    = 0;
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const docList    = document.getElementById('doc-list');
+const docCount   = document.getElementById('doc-count');
+const searchInput= document.getElementById('search-input');
+const taskTabs   = document.getElementById('task-tabs');
+const sampleCard = document.getElementById('sample-card');
+const counter    = document.getElementById('sample-counter');
+const prevBtn    = document.getElementById('prev-btn');
+const nextBtn    = document.getElementById('next-btn');
+
+const states = {
+  empty:     document.getElementById('empty-state'),
+  loading:   document.getElementById('loading-state'),
+  error:     document.getElementById('error-state'),
+  noSamples: document.getElementById('no-samples-state'),
+  card:      sampleCard,
+};
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function showState(name) {
+  Object.entries(states).forEach(([k, el]) => { el.style.display = k === name ? '' : 'none'; });
+}
+
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function tagBadge(tag) {
+  const cls = ({
+    title:'tag-title', 'text-block':'tag-text-block', figure:'tag-figure',
+    chart:'tag-chart', table:'tag-table', caption:'tag-caption',
+    'math-block':'tag-math-block', 'code-block':'tag-code-block',
+  })[tag] || 'tag-default';
+  return `<span class="tag-badge ${cls}">${esc(tag)}</span>`;
+}
+
+function dot(viewType) {
+  const c = VIEW_COLORS[viewType] || '#78909C';
+  return `<span class="tab-dot" style="background:${c}"></span>`;
+}
+
+function renderEmpty(msg='(none)') {
+  return `<span class="empty-pill">${msg}</span>`;
+}
+
+// ── Nav ───────────────────────────────────────────────────────────────────────
+function updateNav() {
+  const total = samples.length;
+  counter.textContent = total ? `${sampleIdx + 1} / ${total}` : '—';
+  prevBtn.disabled = sampleIdx <= 0;
+  nextBtn.disabled = sampleIdx >= total - 1;
+}
+
+prevBtn.addEventListener('click', () => { if (sampleIdx > 0) { sampleIdx--; renderSample(); } });
+nextBtn.addEventListener('click', () => { if (sampleIdx < samples.length - 1) { sampleIdx++; renderSample(); } });
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft'  && !prevBtn.disabled) prevBtn.click();
+  if (e.key === 'ArrowRight' && !nextBtn.disabled) nextBtn.click();
+});
+
+// ── Task tabs (built dynamically from /api/tasks) ─────────────────────────────
+function buildTabs(tasks) {
+  taskTabs.innerHTML = '';
+  tasks.forEach((t, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (i === 0 ? ' active' : '');
+    btn.dataset.task = t.task_name;
+    btn.title = t.description;
+    btn.innerHTML = `${dot(t.view_type)}${t.task_name.replace(/_/g,' ')}`;
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeTask = t.task_name;
+      if (activeDocId) loadSamples();
+    });
+    taskTabs.appendChild(btn);
+  });
+  if (tasks.length) activeTask = tasks[0].task_name;
+}
+
+// ── Doc list ──────────────────────────────────────────────────────────────────
+function renderDocList(docs) {
+  const q = searchInput.value.toLowerCase();
+  const filtered = q ? docs.filter(d => d.doc_name.toLowerCase().includes(q)) : docs;
+  docList.innerHTML = '';
+  filtered.forEach(doc => {
+    const el = document.createElement('div');
+    el.className = 'doc-item' + (doc.doc_id === activeDocId ? ' active' : '');
+    el.dataset.id = doc.doc_id;
+    el.innerHTML = `
+      <div class="doc-name">${esc(doc.doc_name)}</div>
+      <div class="doc-meta">${doc.page_count} pages${doc.has_images ? '' : ' · <span style="color:var(--red)">no imgs</span>'}</div>`;
+    el.addEventListener('click', () => selectDoc(doc.doc_id));
+    docList.appendChild(el);
+  });
+}
+
+searchInput.addEventListener('input', () => renderDocList(allDocs));
+
+function selectDoc(docId) {
+  activeDocId = docId;
+  renderDocList(allDocs);
+  loadSamples();
+}
+
+// ── Sample loading ─────────────────────────────────────────────────────────────
+async function loadSamples() {
+  showState('loading');
+  samples  = [];
+  sampleIdx = 0;
+  updateNav();
+
+  try {
+    const res = await fetch(`/api/docs/${activeDocId}/samples/${activeTask}`);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await res.json();
+    samples = data.samples;
+    if (!samples.length) { showState('noSamples'); return; }
+    showState('card');
+    renderSample();
+  } catch(err) {
+    states.error.textContent = `Error: ${err.message}`;
+    showState('error');
+  }
+}
+
+// ── Master render dispatcher ──────────────────────────────────────────────────
+function renderSample() {
+  updateNav();
+  const s = samples[sampleIdx];
+  if (!s) return;
+
+  const spec    = allTasks.find(t => t.task_name === s.task_name) || {};
+  const viewType = s.view_type || spec.view_type || 'text';
+
+  const RENDERERS = {
+    image_grid:    renderFigSel,
+    caption:       renderCaption,
+    reading_order: renderReadOrd,
+    text:          renderText,
+    bbox_overlay:  renderBboxOverlay,
+    markdown:      renderMarkdown,
+    xml_tree:      renderXmlTree,
+    xml_diff:      renderXmlDiff,
+    page_sequence: renderPageSeq,
+    canvas_layout: renderCanvas,
+    figure_page_map: renderFigPageMap,
+    kv_form:       renderKvForm,
+  };
+
+  const renderer = RENDERERS[viewType] || renderRaw;
+  const body     = renderer(s);
+  const pageInfo = s.page_idx != null ? ` · page ${s.page_idx}` : '';
+  const c = VIEW_COLORS[viewType] || '#78909C';
+
+  sampleCard.innerHTML = `
+    <div class="sample-header">
+      <span class="sample-key">${esc(s.key)}</span>
+      <span class="view-type-badge" style="background:${c}22;color:${c}">${esc(viewType)}</span>
+      <span class="sample-meta">${esc(s.task_name)}${pageInfo}</span>
+    </div>
+    ${body}`;
+}
+
+// ── view_type renderers ────────────────────────────────────────────────────────
+
+// image_grid — figure_selection
+function renderFigSel(s) {
+  const text = (s.input_text || '').trim() || '(no page text)';
+  const cands = (s.candidates || []).map(c => {
+    const cls = c.is_correct ? 'candidate correct' : 'candidate distractor';
+    const lbl = c.is_correct ? '✓ Ground Truth' : 'Distractor';
+    return `<div class="${cls}">
+      <img src="${esc(c.image_url)}" alt="candidate"
+           onerror="this.parentElement.innerHTML='<div class=no-img>Image not found</div>'">
+      <div class="candidate-label">${lbl} · p.${c.page_origin}</div>
+    </div>`;
+  }).join('');
+  return `<div class="panel-split">
+    <div class="panel-left">
+      <div class="section-label">Page Context</div>
+      <div class="text-block">${esc(text)}</div>
+    </div>
+    <div class="panel-right">
+      <div class="section-label">Candidates (label = ${s.label})</div>
+      <div class="candidates-grid">${cands || renderEmpty()}</div>
+    </div>
+  </div>`;
+}
+
+// caption — caption_prediction
+function renderCaption(s) {
+  const imgHtml = s.image_url
+    ? `<img class="element-img" src="${esc(s.image_url)}" alt="element"
+           onerror="this.outerHTML='<div class=no-img style=height:120px>Image not found</div>'">`
+    : `<div class="no-img" style="height:120px">No image available</div>`;
+  const ctx = items => (items||[]).length
+    ? items.map(e => `<div class="context-item">${tagBadge(e.tag)}<span class="context-text">${esc(e.text||'(empty)')}</span></div>`).join('')
+    : renderEmpty('none');
+  return `<div class="panel-split">
+    <div class="panel-left">
+      <div class="section-label">Element Crop</div>
+      ${imgHtml}
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+        ${tagBadge(s.element_tag)}
+        <span class="bbox-label">${esc(s.bbox)}</span>
+      </div>
+    </div>
+    <div class="panel-right">
+      <div style="margin-bottom:14px">
+        <div class="section-label">Preceding Context</div>${ctx(s.preceding)}
+      </div>
+      <div style="margin-bottom:14px">
+        <div class="section-label">Following Context</div>${ctx(s.following)}
+      </div>
+      <div>
+        <div class="section-label">Ground Truth Caption</div>
+        <div class="gt-box">${esc(s.gt_caption)}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// reading_order
+function renderReadOrd(s) {
+  const shuffled = s.shuffled || [];
+  const target   = s.target   || [];
+  const correct  = target.map(t => shuffled[t]);
+  const item = (it, pos, fromIdx) => `<div class="list-item">
+    <span class="list-num">${pos}</span>
+    ${tagBadge(it.tag)}
+    <span class="list-text">${esc(it.text||'(empty)')}</span>
+    ${fromIdx != null ? `<span style="font-size:10px;color:var(--muted);font-family:monospace">← #${fromIdx}</span>` : ''}
+  </div>`;
+  return `<div class="panel-split">
+    <div class="panel-left">
+      <div class="section-label">Input (Shuffled)</div>
+      ${shuffled.map((it,i) => item(it,i,null)).join('') || renderEmpty()}
+    </div>
+    <div class="panel-right">
+      <div class="section-label">Ground Truth Order</div>
+      ${correct.map((it,i) => item(it,i,it.idx)).join('') || renderEmpty()}
+    </div>
+  </div>`;
+}
+
+// text — basic_reading
+function renderText(s) {
+  return `<div class="panel-full">
+    <div class="section-label">Full Page Text (Reading Order)</div>
+    <div class="text-block">${esc(s.text||'(empty)')}</div>
+  </div>`;
+}
+
+// bbox_overlay — ocr / layout
+function renderBboxOverlay(s) {
+  const blocks = s.blocks || [];
+  const hasText = blocks.length && 'text' in blocks[0];
+  const rows = blocks.map((b,i) => `<div class="bbox-item">
+    <span class="list-num">${i}</span>
+    ${tagBadge(b.tag)}
+    ${hasText ? `<span class="list-text">${esc(b.text||'')}</span>` : ''}
+    <span class="bbox-coord">${esc(b.bbox)}</span>
+  </div>`).join('');
+  return `<div class="panel-full">
+    <div class="section-label">${hasText ? 'Text Blocks + BBoxes' : 'Layout Elements + BBoxes'} (${blocks.length})</div>
+    ${rows || renderEmpty('No blocks on this page')}
+  </div>`;
+}
+
+// markdown
+function renderMarkdown(s) {
+  // Simple markdown → HTML (headings, paragraphs, code fences, images)
+  let md = esc(s.markdown || '(empty)');
+  md = md.replace(/^######\s+(.+)$/gm, '<h6>$1</h6>');
+  md = md.replace(/^#####\s+(.+)$/gm,  '<h5>$1</h5>');
+  md = md.replace(/^####\s+(.+)$/gm,   '<h4>$1</h4>');
+  md = md.replace(/^###\s+(.+)$/gm,    '<h3>$1</h3>');
+  md = md.replace(/^##\s+(.+)$/gm,     '<h2>$1</h2>');
+  md = md.replace(/^#\s+(.+)$/gm,      '<h1>$1</h1>');
+  md = md.replace(/!\[([^\]]*)\]\(([^)]*)\)/g, '<img src="$2" alt="$1" style="max-width:100%">');
+  md = md.replace(/\$\$\n?([\s\S]*?)\n?\$\$/g, '<pre>$$\n$1\n$$</pre>');
+  md = md.replace(/```\n?([\s\S]*?)\n?```/g,    '<pre>$1</pre>');
+  md = md.replace(/\n\n/g, '</p><p>');
+  return `<div class="panel-full">
+    <div class="section-label">Semantic Markdown Output</div>
+    <div class="md-render"><p>${md}</p></div>
+  </div>`;
+}
+
+// xml_tree — page_tree
+function renderXmlTree(s) {
+  return `<div class="panel-full">
+    <div class="section-label">Bbox-free XML Tree</div>
+    <div class="code-block">${esc(s.xml||'(empty)')}</div>
+  </div>`;
+}
+
+// xml_diff — dom_edition
+function renderXmlDiff(s) {
+  return `<div class="xml-panel">
+    <div class="half">
+      <div class="section-label">Input (Corrupted)</div>
+      <div class="code-block">${esc(s.input_xml||'(empty)')}</div>
+    </div>
+    <div class="half">
+      <div class="section-label">Target (Clean)</div>
+      <div class="code-block">${esc(s.target_xml||'(empty)')}</div>
+    </div>
+  </div>`;
+}
+
+// page_sequence — page_sorting
+function renderPageSeq(s) {
+  const shuffled = s.shuffled || [];
+  const target   = s.target   || [];
+  // correct[i] = shuffled[target[i]]
+  const correct  = target.map(t => shuffled[t]);
+  const card = (item, pos) => `<div class="page-card">
+    <span class="page-pos">${pos}</span>
+    <span style="color:var(--text)">orig page <strong>${item.orig_page_idx}</strong></span>
+    ${(item.page_number_bboxes||[]).length
+      ? `<span style="font-family:monospace;font-size:10px;color:var(--muted)">${item.page_number_bboxes.length} pg-num bbox(es)</span>`
+      : ''}
+  </div>`;
+  return `<div class="panel-split">
+    <div class="panel-left">
+      <div class="section-label">Input (Shuffled, ${shuffled.length} pages)</div>
+      <div class="page-seq">${shuffled.map((it,i) => card(it,i)).join('') || renderEmpty()}</div>
+    </div>
+    <div class="panel-right">
+      <div class="section-label">Ground Truth Order</div>
+      <div class="page-seq">${correct.map((it,i) => card(it,i)).join('') || renderEmpty()}</div>
+    </div>
+  </div>`;
+}
+
+// canvas_layout — doc_reconstruction
+function renderCanvas(s) {
+  const elems  = s.elements || [];
+  const bboxes = s.target   || [];
+  return `<div class="panel-split">
+    <div class="panel-left">
+      <div class="section-label">Shuffled Elements (${elems.length})</div>
+      ${elems.map(e => `<div class="canvas-item">
+        <span class="canvas-idx">${e.idx}</span>
+        ${tagBadge(e.tag)}
+        <span class="list-text">${esc(e.text||'(empty)')}</span>
+      </div>`).join('') || renderEmpty()}
+    </div>
+    <div class="panel-right">
+      <div class="section-label">Target BBoxes</div>
+      ${bboxes.map((b,i) => `<div class="canvas-item">
+        <span class="canvas-idx">${i}</span>
+        <span class="canvas-bbox">${esc(b)}</span>
+      </div>`).join('') || renderEmpty()}
+    </div>
+  </div>`;
+}
+
+// figure_page_map — figure_ordering
+function renderFigPageMap(s) {
+  const figs   = s.figures || [];
+  const target = s.target  || [];
+  const pages  = s.pages   || [];
+  return `<div class="panel-full">
+    <div class="section-label">Pages: [${pages.join(', ')}]&emsp;Figures: ${figs.length}</div>
+    ${figs.map((f,i) => `<div class="fig-item">
+      <span class="list-num">${f.idx}</span>
+      <span class="fig-src">${esc(f.src)}</span>
+      <span style="color:var(--muted);font-size:11px">→ page</span>
+      <span class="fig-page">${target[i] ?? '?'}</span>
+    </div>`).join('') || renderEmpty('No figures')}
+  </div>`;
+}
+
+// kv_form — form_filling
+function renderKvForm(s) {
+  const fields = s.fields || [];
+  return `<div class="panel-full">
+    <div class="section-label">Form Fields (${fields.length})${s.width ? ` · ${s.width}×${s.height}` : ''}</div>
+    ${fields.map((f,i) => `<div class="kv-item">
+      <span class="list-num">${i}</span>
+      <span class="kv-cat">${esc(f.category)}</span>
+      <span class="kv-bbox">${esc(JSON.stringify(f.bbox))}</span>
+    </div>`).join('') || renderEmpty('No fields')}
+  </div>`;
+}
+
+// fallback: raw payload
+function renderRaw(s) {
+  const raw = s.raw || s;
+  return `<div class="panel-full">
+    <div class="section-label">Raw payload</div>
+    <div class="code-block">${esc(JSON.stringify(raw, null, 2))}</div>
+  </div>`;
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  const [tasksRes, docsRes] = await Promise.all([
+    fetch('/api/tasks'),
+    fetch('/api/docs'),
+  ]);
+  allTasks = await tasksRes.json();
+  allDocs  = await docsRes.json();
+
+  buildTabs(allTasks);
+  docCount.textContent = `${allDocs.length} document${allDocs.length !== 1 ? 's' : ''}`;
+  renderDocList(allDocs);
+}
+
+init();
+</script>
+</body>
+</html>
