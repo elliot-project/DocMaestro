@@ -569,7 +569,6 @@ async function renderPageCanvas(s) {
     });
 
     // ③ Hover tooltip: show element tag + text on mouse move
-    const scroll = document.getElementById('canvas-scroll');
     const canvasRect = () => canvas.getBoundingClientRect();
 
     canvas.onmousemove = (e) => {
