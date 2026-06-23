@@ -40,7 +40,6 @@ class FigureOrderingComposer(BaseTaskComposer):
             return []
 
         doc_name = root.attrib["name"]
-        page_indices = [page_idx(p) for p in pages]
 
         figures: list[dict] = []
         for p in pages:
@@ -51,8 +50,21 @@ class FigureOrderingComposer(BaseTaskComposer):
                     if img is not None and img.attrib.get("src"):
                         figures.append({"src": img.attrib["src"], "page_origin": origin})
 
-        if not figures:
+        if len(figures) < 3:
             return []
+
+        # Sample a subset of 3 to 5 figures
+        n_sample = self._rng.randint(3, min(5, len(figures)))
+        figures = self._rng.sample(figures, n_sample)
+
+        # Determine the subset of pages to present: origin pages + distractors (max 5 pages)
+        origin_pages = {f["page_origin"] for f in figures}
+        all_page_indices = [page_idx(p) for p in pages]
+
+        while len(origin_pages) < 5 and len(origin_pages) < len(all_page_indices):
+            origin_pages.add(self._rng.choice(all_page_indices))
+
+        page_indices = sorted(list(origin_pages))
 
         self._rng.shuffle(figures)
         input_figures = [{"idx": i, "src": f["src"]} for i, f in enumerate(figures)]

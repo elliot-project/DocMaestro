@@ -38,8 +38,13 @@ class PageSortingComposer(BaseTaskComposer):
     def compose_document(self, root: ET.Element, img_root: Path) -> list[Sample]:
         """Produce a single page-ordering sample for the document."""
         pages = list(root)
-        if len(pages) < 2:
+        if len(pages) < 3:
             return []
+
+        # Sample a random continuous subset of 3 to 5 pages
+        n_sample = self._rng.randint(3, min(5, len(pages)))
+        start_idx = self._rng.randint(0, len(pages) - n_sample)
+        pages = pages[start_idx : start_idx + n_sample]
 
         doc_name = root.attrib["name"]
         ordered = [

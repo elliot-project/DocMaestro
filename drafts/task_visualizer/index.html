@@ -522,8 +522,9 @@ async function renderPageCanvas(s) {
     canvas.style.width  = drawW + 'px';
     canvas.style.height = drawH + 'px';
 
-    const scaleX = img.naturalWidth  / s.page_width;
-    const scaleY = img.naturalHeight / s.page_height;
+    // BBoxes in XML are normalized to a 0-1000 range, not page dims
+    const scaleX = img.naturalWidth  / 1000;
+    const scaleY = img.naturalHeight / 1000;
 
     // Draw page
     ctx.drawImage(img, 0, 0);
