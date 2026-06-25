@@ -17,6 +17,7 @@
 | [cli-reference.md](cli-reference.md) | All CLI scripts — flags, defaults, usage examples |
 | [repository-structure.md](repository-structure.md) | Directory layout, module reference, file conventions, coding standards |
 | [task-composer.md](task-composer.md) | Task Composer module — SSL task generation, shard writing, extending with custom tasks |
+| [datasets-commonforms.md](datasets-commonforms.md) | CommonForms dataset — prep into per-doc PDFs + GT sidecars, then run the pipeline |
 
 ---
 

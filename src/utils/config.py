@@ -63,6 +63,7 @@ class PathsConfig:
 
     data_dir: Path = field(default_factory=lambda: Path("data"))
     output_dir: Path = field(default_factory=lambda: Path("output"))
+    state_dir: Path = field(default_factory=lambda: Path("state"))
 
 
 @dataclass
@@ -107,6 +108,7 @@ def load_config(config_path: Path) -> PipelineConfig:
     paths = PathsConfig(
         data_dir=Path(paths_raw.get("data_dir", "data")),
         output_dir=Path(paths_raw.get("output_dir", "output")),
+        state_dir=Path(paths_raw.get("state_dir", "state")),
     )
 
     return PipelineConfig(

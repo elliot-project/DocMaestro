@@ -15,16 +15,27 @@ Title-aided detection requires batch_size=1 (hybrid backend only).
 Set window_size (or MINERU_PROCESSING_WINDOW_SIZE) when
 batch_size × avg_pages_per_doc exceeds the default window of 64.
 
+Worker mode
+-----------
+When invoked with ``--worker``, main.py becomes a long-lived per-GPU worker:
+it reads absolute PDF paths from stdin (one per line), extracts each, and
+emits a single ``@@OMNIDOC@@`` protocol line per document on stdout. All
+human-readable output (logs, progress) goes to stderr so stdout carries only
+the protocol. Worker mode never touches the manifest — only the parent
+process (run_sharded.py) or standalone mode write it.
+
 Usage:
     uv run main.py --pdf data/pdfs/report.pdf
     uv run main.py --pdf data/pdfs/ --config configs/extractor/fast.yaml
     uv run main.py --pdf data/pdfs/ --backend pipeline --batch-size 4
     uv run main.py --pdf data/pdfs/report.pdf --no-wandb
+    uv run main.py --worker --pdf data/pdfs/ --input-root data/pdfs/
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -38,6 +49,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from src.extractor import ExtractionResult, batch_extract, extract  # noqa: E402
 from src.figure_classifier import FigureClassifier  # noqa: E402
+from src.pipeline.worker import worker_loop  # noqa: E402
 from src.utils.benchmark import (  # noqa: E402
     init_run,
     log_extraction_metrics,
@@ -51,6 +63,8 @@ from src.utils.config import (  # noqa: E402
     collect_pdfs,
     load_config,
 )
+from src.utils.manifest import Manifest, compute_run_id, manifest_path  # noqa: E402
+from src.utils.paths import doc_rel_dir, output_xml_path  # noqa: E402
 from src.xml_formatter import build_document_xml, save_document_xml  # noqa: E402
 
 _DEFAULT_CONFIG = Path("configs/extractor/default.yaml")
@@ -99,6 +113,23 @@ def _suppress_noisy_logging() -> None:
 
 
 # ── Stage helpers ─────────────────────────────────────────────────────────────
+
+
+def save_raw_json(result: ExtractionResult, out_dir: Path, doc_name: str) -> None:
+    """Persist MinerU's raw middle.json and content_list.json next to the XML.
+
+    Args:
+        result: ExtractionResult from extract() or batch_extract().
+        out_dir: Directory to write the two JSON files into (typically the
+            same directory as the synthesized XML for this document).
+        doc_name: Document stem, used as the filename prefix.
+    """
+    (out_dir / f"{doc_name}_middle.json").write_text(
+        json.dumps(result.middle_json, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (out_dir / f"{doc_name}_content_list.json").write_text(
+        json.dumps(result.content_list, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def _find_img_root(extraction_output_dir: Path) -> Path:
@@ -156,36 +187,33 @@ def _finalize_document(
     result: ExtractionResult,
     config: PipelineConfig,
     root_dir: Path,
-    console=None,
+    console,
     step: int = 0,
 ) -> None:
     """Save JSON, build XML, run figure-clf, and log WandB for one extracted doc.
+
+    Never writes human-readable text to stdout directly — all such output
+    goes through ``console.print`` so worker mode (which redirects this
+    console to stderr) keeps stdout reserved for the protocol stream.
 
     Args:
         pdf_path: Source PDF path.
         result: ExtractionResult from extract() or batch_extract().
         config: Full pipeline configuration.
         root_dir: Base input directory to calculate relative path.
-        console: Rich Console for output (falls back to print if None).
+        console: Rich Console for human-readable output.
         step: WandB step index for the current run.
     """
     ext = config.extraction
     doc_name = pdf_path.stem
 
-    if root_dir.is_file():
-        rel_dir = Path(doc_name)
-    else:
-        try:
-            rel_dir = pdf_path.relative_to(root_dir.resolve()).parent / doc_name
-        except ValueError:
-            rel_dir = Path(doc_name)
-
     # XML sits alongside MinerU's native output: <conference>/<year>/<doc>/<doc>_backend.xml
-    xml_path = config.paths.output_dir / rel_dir / f"{doc_name}_{ext.backend}.xml"
+    rel_dir = doc_rel_dir(pdf_path, root_dir)
+    xml_path = output_xml_path(config.paths.output_dir, rel_dir, doc_name, ext.backend)
 
-    _log = console.print if console else print
-
-    _log(f"  [green]✓[/green] {doc_name}: {result.page_count} pages in {result.duration_seconds:.1f}s")
+    console.print(
+        f"  [green]✓[/green] {doc_name}: {result.page_count} pages in {result.duration_seconds:.1f}s"
+    )
 
     log_extraction_metrics(
         duration_seconds=result.duration_seconds,
@@ -200,6 +228,7 @@ def _finalize_document(
     xml_str = build_document_xml(result.content_list, result.middle_json, doc_name)
     save_document_xml(xml_str, xml_path)
     log_xml_stats(xml_str, xml_path)
+    save_raw_json(result, xml_path.parent, doc_name)
 
     run = wandb.run
     if run is not None:
@@ -213,7 +242,7 @@ def _finalize_document(
         run.log_artifact(artifact)
 
     if config.figure_classification.enabled:
-        _log(f"  [dim]Running figure classification for {doc_name}...[/dim]")
+        console.print(f"  [dim]Running figure classification for {doc_name}...[/dim]")
         img_root = _find_img_root(result.output_dir)
         _enrich_figures(xml_path, img_root, config.figure_classification)
 
@@ -225,7 +254,8 @@ def parse_args() -> argparse.Namespace:
     """Parse command-line arguments.
 
     Returns:
-        Namespace with pdf, config, no_wandb, batch_size, and window_size fields.
+        Namespace with pdf, config, no_wandb, batch_size, window_size, worker,
+        input_root, and retry_failed fields.
     """
     parser = argparse.ArgumentParser(
         description="OmniDocParser: full MinerU → XML → enrichment pipeline."
@@ -258,7 +288,95 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-wandb", action="store_true", help="Disable WandB logging for this run."
     )
+    parser.add_argument(
+        "--worker",
+        action="store_true",
+        help="Run as a long-lived per-GPU worker: read PDF paths from stdin, "
+             "emit @@OMNIDOC@@ protocol lines on stdout. Used by "
+             "scripts/run_sharded.py; not intended for standalone use.",
+    )
+    parser.add_argument(
+        "--input-root",
+        type=Path,
+        default=None,
+        help="Original input directory (or single PDF), used by --worker to "
+             "compute each document's output hierarchy via doc_rel_dir().",
+    )
+    parser.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Re-queue documents previously marked 'failed' in the manifest.",
+    )
     return parser.parse_args()
+
+
+def run_worker(args: argparse.Namespace, config: PipelineConfig) -> None:
+    """Run as a long-lived per-GPU worker: stdin paths in, protocol lines out.
+
+    Reads absolute PDF path lines from stdin until EOF, extracts each one on
+    this process's GPU (pinned via CUDA_VISIBLE_DEVICES by the parent), and
+    writes the synthesized XML and raw JSON next to it in the output tree.
+    Exactly one ``@@OMNIDOC@@`` protocol line is written to stdout per
+    document; everything else (MinerU/vLLM logs, the ``✓``/``✗`` summary
+    lines from ``_finalize_document``) goes to stderr. The worker never
+    touches the manifest — only the parent process writes it.
+
+    Args:
+        args: Parsed CLI arguments. ``args.input_root`` must be set; it is
+            the original ``--pdf`` root the parent dispatcher collected PDFs
+            from, needed to reconstruct each document's output hierarchy.
+        config: Loaded pipeline configuration.
+    """
+    from rich.console import Console
+
+    if args.input_root is None:
+        raise SystemExit("--worker requires --input-root (the original --pdf input directory).")
+
+    err_console = Console(file=sys.stderr)
+    ext = config.extraction
+    input_root = args.input_root
+
+    if ext.window_size:
+        os.environ["MINERU_PROCESSING_WINDOW_SIZE"] = str(ext.window_size)
+
+    if not args.no_wandb and config.wandb_enabled:
+        init_run(
+            pdf_name=input_root.name if input_root else args.pdf.name,
+            backend=ext.backend,
+            extra_config={
+                "language": ext.language,
+                "window_size": ext.window_size,
+                "title_aided": config.title_aided.enabled,
+                "figure_classification": config.figure_classification.enabled,
+                "worker": True,
+            },
+        )
+
+    def process(path_str: str) -> dict:
+        pdf_path = Path(path_str)
+        rel_dir = doc_rel_dir(pdf_path, input_root)
+        result = extract(
+            pdf_path=pdf_path,
+            output_dir=config.paths.data_dir / rel_dir.parent,
+            backend=ext.backend,
+            language=ext.language,
+            start_page=ext.start_page,
+            end_page=ext.end_page,
+            server_url=ext.server_url,
+            title_aided_config=config.title_aided.as_mineru_config(),
+            gpu_memory_utilization=ext.gpu_memory_utilization,
+        )
+        _finalize_document(pdf_path, result, config, input_root, console=err_console)
+        return {"pages": result.page_count, "seconds": result.duration_seconds}
+
+    try:
+        worker_loop(
+            iter(sys.stdin.readline, ""),
+            process,
+            lambda line: print(line, flush=True),
+        )
+    finally:
+        wandb.finish()
 
 
 def main() -> None:
@@ -289,6 +407,10 @@ def main() -> None:
     if args.window_size is not None:
         config.extraction.window_size = args.window_size
 
+    if args.worker:
+        run_worker(args, config)
+        return
+
     ext = config.extraction
     use_batching = ext.backend == "pipeline" and ext.batch_size > 1
 
@@ -297,28 +419,18 @@ def main() -> None:
 
     console = Console()
 
-    pdfs = collect_pdfs(args.pdf)
+    all_pdfs = collect_pdfs(args.pdf)
 
-    # ── Resume logic: skip already-processed docs ──
-    total_found = len(pdfs)
-    skipped = 0
-    unprocessed_pdfs = []
-    for pdf_path in pdfs:
-        doc_name = pdf_path.stem
-        if args.pdf.is_file():
-            rel_dir = Path(doc_name)
-        else:
-            try:
-                rel_dir = pdf_path.relative_to(args.pdf.resolve()).parent / doc_name
-            except ValueError:
-                rel_dir = Path(doc_name)
-        xml_path = config.paths.output_dir / rel_dir / f"{doc_name}_{ext.backend}.xml"
-        if xml_path.exists():
-            skipped += 1
-        else:
-            unprocessed_pdfs.append(pdf_path)
+    # ── Resume logic via the manifest: skip 'done', optionally retry 'failed' ──
+    run_id = compute_run_id(args.pdf, ext.backend, config.paths.output_dir)
+    manifest = Manifest(manifest_path(config.paths.state_dir, run_id))
 
-    pdfs = unprocessed_pdfs
+    doc_ids = [doc_rel_dir(p, args.pdf).as_posix() for p in all_pdfs]
+    pending_ids = set(manifest.pending(doc_ids, retry_failed=args.retry_failed))
+    pdfs = [p for p, doc_id in zip(all_pdfs, doc_ids) if doc_id in pending_ids]
+
+    total_found = len(all_pdfs)
+    skipped = total_found - len(pdfs)
 
     console.rule("[bold blue]OmniDocParser[/bold blue]")
     console.print(f"  Total PDFs found:   [bold]{total_found}[/bold]")
@@ -385,6 +497,7 @@ def main() -> None:
                     except Exception as exc:
                         for p in chunk:
                             failed_docs.append((p.stem, str(exc)))
+                            manifest.mark_failed(doc_rel_dir(p, args.pdf).as_posix(), str(exc))
                             progress.console.print(
                                 f"  [red]✗[/red] {p.stem}: {exc}"
                             )
@@ -392,8 +505,10 @@ def main() -> None:
                         continue
 
                     for pdf_path, result in zip(chunk, chunk_results):
+                        doc_id = doc_rel_dir(pdf_path, args.pdf).as_posix()
                         if isinstance(result, Exception):
                             failed_docs.append((pdf_path.stem, str(result)))
+                            manifest.mark_failed(doc_id, str(result))
                             progress.console.print(
                                 f"  [red]✗[/red] {pdf_path.stem}: {result}"
                             )
@@ -403,6 +518,9 @@ def main() -> None:
                                 pdf_path, result, config, args.pdf,
                                 console=progress.console,
                             )
+                            manifest.mark_done(
+                                doc_id, pages=result.page_count, seconds=result.duration_seconds
+                            )
                     progress.advance(task, advance=len(chunk))
             else:
                 # ── Per-document path (hybrid / VLM / single-doc pipeline) ───
@@ -411,13 +529,8 @@ def main() -> None:
                 )
                 for i, pdf_path in enumerate(pdfs):
                     doc_name = pdf_path.stem
-                    if args.pdf.is_file():
-                        rel_dir = Path(doc_name)
-                    else:
-                        try:
-                            rel_dir = pdf_path.relative_to(args.pdf.resolve()).parent / doc_name
-                        except ValueError:
-                            rel_dir = Path(doc_name)
+                    rel_dir = doc_rel_dir(pdf_path, args.pdf)
+                    doc_id = rel_dir.as_posix()
 
                     progress.update(task, description=f"[cyan]{doc_name[:60]}...")
 
@@ -436,6 +549,7 @@ def main() -> None:
                         )
                     except Exception as exc:
                         failed_docs.append((doc_name, str(exc)))
+                        manifest.mark_failed(doc_id, str(exc))
                         progress.console.print(
                             f"  [red]✗[/red] {doc_name}: {exc}"
                         )
@@ -446,6 +560,7 @@ def main() -> None:
                         pdf_path, result, config, args.pdf,
                         console=progress.console, step=i,
                     )
+                    manifest.mark_done(doc_id, pages=result.page_count, seconds=result.duration_seconds)
                     progress.advance(task)
 
     finally:

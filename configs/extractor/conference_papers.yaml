@@ -8,12 +8,18 @@ extraction:
   start_page: 0
   end_page: null
   server_url: null
-  gpu_memory_utilization: 0.85
+  # vLLM reserves this fraction upfront in its own process. The hybrid backend's
+  # torch-side layout/OCR work runs outside that budget on the same GPU, so leave
+  # headroom (0.70 ≈ 14 GiB free on 46 GiB cards) to avoid CUDA OOM on big PDFs.
+  gpu_memory_utilization: 0.70
   window_size: 128
 
 paths:
   data_dir: /data/151-1/users/mserrao/conference-papers
   output_dir: /data/151-1/users/mserrao/conference-papers
+  # Resume/retry manifest (JSONL) lives here, on the persistent data volume and
+  # separate from the output tree, so restarts skip already-done documents.
+  state_dir: /data/151-1/users/mserrao/conference-papers-state
 
 title_aided:
   enabled: false

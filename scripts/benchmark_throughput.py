@@ -38,6 +38,7 @@ recommended approach for throughput benchmarking.
 """
 
 import argparse
+import os
 import random
 import subprocess
 import sys
@@ -145,6 +146,29 @@ class _GpuMonitor:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _resolve_gpu_indices(gpu_index_arg: str | None, env_value: str | None) -> list[int]:
+    """Resolve the physical GPU indices to expose for this benchmark run.
+
+    Args:
+        gpu_index_arg: Raw value of ``--gpu-index`` (e.g. ``"4"`` or ``"4,5"``),
+            or ``None`` if the flag was not passed.
+        env_value: Current value of the ``CUDA_VISIBLE_DEVICES`` environment
+            variable, or ``None``/empty if unset.
+
+    Returns:
+        A list of physical GPU indices, e.g. ``[4]`` or ``[4, 5]``. Falls back
+        to the indices parsed from ``env_value`` when ``gpu_index_arg`` is
+        ``None``, and finally to ``[0]`` when neither is set.
+    """
+    if gpu_index_arg is not None:
+        return [int(x.strip()) for x in gpu_index_arg.split(",") if x.strip()]
+    if env_value:
+        indices = [int(x.strip()) for x in env_value.split(",") if x.strip()]
+        if indices:
+            return indices
+    return [0]
+
 
 def _human_time(seconds: float) -> str:
     if seconds < 60:      return f"{seconds:.1f}s"
@@ -382,6 +406,16 @@ def main() -> None:
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     args = parser.parse_args()
 
+    # Resolve physical GPU indices and set CUDA_VISIBLE_DEVICES as early as
+    # possible — BEFORE any extract()/vLLM init. vLLM binds to whatever GPUs
+    # are visible at init time, so setting this after the warm-up call would
+    # have no effect on which physical GPU(s) actually run compute; only
+    # nvidia-smi monitoring would respect it.
+    gpu_indices = _resolve_gpu_indices(args.gpu_index, os.environ.get("CUDA_VISIBLE_DEVICES"))
+    if args.gpu_index is not None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in gpu_indices)
+    print(f"[monitor] polling GPU(s) {gpu_indices} via nvidia-smi (util averaged across all)")
+
     # Collect PDFs
     if args.pdf:
         pdfs = [args.pdf]
@@ -427,16 +461,6 @@ def main() -> None:
     init_overhead = time.perf_counter() - t_wu0 - wu.duration_seconds
     print(f"[warmup] done — reported {wu.duration_seconds:.1f}s, "
           f"init overhead ≈ {init_overhead:.1f}s")
-
-    # Resolve physical GPU indices for nvidia-smi and CUDA_VISIBLE_DEVICES.
-    import os
-    if args.gpu_index is not None:
-        gpu_indices = [int(x.strip()) for x in args.gpu_index.split(",") if x.strip()]
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in gpu_indices)
-    else:
-        cvd = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-        gpu_indices = [int(x.strip()) for x in cvd.split(",") if x.strip()] if cvd else [0]
-    print(f"[monitor] polling GPU(s) {gpu_indices} via nvidia-smi (util averaged across all)")
 
     # ── Timed benchmark runs ──────────────────────────────────────────────────
     monitor = _GpuMonitor(gpu_indices=gpu_indices, interval=0.5)
