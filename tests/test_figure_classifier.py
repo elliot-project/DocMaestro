@@ -14,6 +14,9 @@ from PIL import Image
 from src.figure_classifier import _DEFAULT_MODEL, FigureClassifier
 from src.utils.labels import LABEL_REGISTRY
 
+# Mirrors LABEL_REGISTRY. "rasterized-table" was intentionally dropped in 4a465ec:
+# MinerU emits tables as their own <table> element, so a rasterized-table figure
+# category only competed with the real table path.
 EXPECTED_LABELS = {
     "natural-image",
     "diagram",
@@ -24,7 +27,6 @@ EXPECTED_LABELS = {
     "logo-icon",
     "map",
     "signature-handwriting",
-    "rasterized-table",
 }
 
 
