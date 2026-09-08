@@ -3,7 +3,7 @@
 ## Directory Layout
 
 ```
-OmniDocParser/
+DocMaestro/
 │
 ├── CLAUDE.md                       ← Project instructions for AI assistant
 ├── main.py                         ← Primary orchestrator: PDF → extraction → XML → WandB
@@ -33,7 +33,14 @@ OmniDocParser/
 │   ├── classify_figures.py         ← Standalone figure enrichment (SigLIP2)
 │   ├── run_docvqa2026.py           ← DocVQA-2026 dataset sweep
 │   ├── run_sharded.py              ← Multi-GPU launcher (shards PDF list)
+│   ├── run_doctasks.py             ← Run every registered SSL composer over output/
+│   ├── prepare_commonforms.py      ← Materialize CommonForms rows into per-doc PDFs
 │   └── visualize.py                ← Standalone visualization
+│
+├── viz/                            ← Interactive inspection tools (served, not batch)
+│   └── task_visualizer/
+│       ├── server.py               ← FastAPI backend: runs composers on demand
+│       └── index.html              ← Frontend: one renderer per view_type
 │
 ├── tests/                          ← pytest unit tests
 │   ├── __init__.py
@@ -89,10 +96,11 @@ OmniDocParser/
 │       ├── *_gpu_util.png
 │       └── *_scale_projection.png
 │
-└── lib/                            ← Vendored JS libraries (legacy, from PyVis era)
-    ├── bindings/
-    └── tom-select/
+└── drafts/                         ← Local exploration scripts (gitignored, never imported)
 ```
+
+> `lib/` may exist locally — vendored JS left over from the PyVis era. It is
+> untracked and unused; nothing in the pipeline references it.
 
 ---
 

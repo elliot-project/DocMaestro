@@ -17,3 +17,5 @@ drafts/
 .antigravity/
 .antigravitycli/
 
+*.pyc
+output/shard_logs/

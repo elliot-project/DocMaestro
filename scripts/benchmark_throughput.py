@@ -7,15 +7,38 @@ warm-up pass) and monitors live GPU utilisation during inference.  Generates:
   2. GPU utilisation timeline during the benchmark run.
   3. Scale projection — total wall-clock at 1K–1B pages for 1/4/8/16 GPUs.
 
-Usage:
-    CUDA_VISIBLE_DEVICES=6 uv run scripts/benchmark_throughput.py \\
+Multi-GPU strategies
+--------------------
+The MinerU router launches one worker subprocess per GPU and load-balances
+documents across them (data parallel). Each worker owns one GPU. This is the
+recommended approach for throughput benchmarking.
+
+  Strategy A — data parallel via router (recommended for throughput):
+    # Terminal 1: start the router with 2 local workers
+    mineru-router --host 0.0.0.0 --port 8002 --local-gpus 4,5
+
+    # Terminal 2: run the benchmark against the router
+    uv run scripts/benchmark_throughput.py \\
+        --pdf-dir data/pdfs/ \\
+        --backend hybrid-http-client \\
+        --server-url http://localhost:8002 \\
+        --gpu-memory-utilization 0.6 \\
+        --gpu-index 4,5
+
+  Strategy B — tensor parallel (single model split across N GPUs):
+    CUDA_VISIBLE_DEVICES=4,5 uv run scripts/benchmark_throughput.py \\
         --pdf-dir data/pdfs/ \\
         --backend hybrid-auto-engine \\
-        --gpu-memory-utilization 0.85 \\
-        --repeats 1
+        --tensor-parallel-size 2 \\
+        --gpu-memory-utilization 0.6 \\
+        --gpu-index 4,5
+
+  Strategy A doubles document throughput.
+  Strategy B helps only if a single doc is bottlenecked by single-GPU memory.
 """
 
 import argparse
+import os
 import random
 import subprocess
 import sys
@@ -75,9 +98,9 @@ _DOC_PALETTE = [
 class _GpuMonitor:
     """Background thread that polls nvidia-smi every second."""
 
-    def __init__(self, gpu_index: int = 0, interval: float = 1.0) -> None:
-        self.gpu_index = gpu_index
-        self.interval  = interval
+    def __init__(self, gpu_indices: list[int], interval: float = 1.0) -> None:
+        self.gpu_indices = gpu_indices
+        self.interval    = interval
         self.utilizations: list[float] = []
         self.timestamps:   list[float] = []
         self._stop = threading.Event()
@@ -93,20 +116,22 @@ class _GpuMonitor:
         self._thread.join(timeout=5)
 
     def _run(self) -> None:
+        id_str = ",".join(str(g) for g in self.gpu_indices)
         while not self._stop.is_set():
             try:
                 out = subprocess.check_output(
                     [
                         "nvidia-smi",
-                        f"--id={self.gpu_index}",
+                        f"--id={id_str}",
                         "--query-gpu=utilization.gpu",
                         "--format=csv,noheader,nounits",
                     ],
                     timeout=3,
                 )
-                util = float(out.decode().strip())
-                self.utilizations.append(util)
-                self.timestamps.append(time.perf_counter() - self._t0)
+                utils = [float(x) for x in out.decode().strip().splitlines() if x.strip()]
+                if utils:
+                    self.utilizations.append(float(np.mean(utils)))
+                    self.timestamps.append(time.perf_counter() - self._t0)
             except Exception:
                 pass
             self._stop.wait(self.interval)
@@ -121,6 +146,29 @@ class _GpuMonitor:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _resolve_gpu_indices(gpu_index_arg: str | None, env_value: str | None) -> list[int]:
+    """Resolve the physical GPU indices to expose for this benchmark run.
+
+    Args:
+        gpu_index_arg: Raw value of ``--gpu-index`` (e.g. ``"4"`` or ``"4,5"``),
+            or ``None`` if the flag was not passed.
+        env_value: Current value of the ``CUDA_VISIBLE_DEVICES`` environment
+            variable, or ``None``/empty if unset.
+
+    Returns:
+        A list of physical GPU indices, e.g. ``[4]`` or ``[4, 5]``. Falls back
+        to the indices parsed from ``env_value`` when ``gpu_index_arg`` is
+        ``None``, and finally to ``[0]`` when neither is set.
+    """
+    if gpu_index_arg is not None:
+        return [int(x.strip()) for x in gpu_index_arg.split(",") if x.strip()]
+    if env_value:
+        indices = [int(x.strip()) for x in env_value.split(",") if x.strip()]
+        if indices:
+            return indices
+    return [0]
+
 
 def _human_time(seconds: float) -> str:
     if seconds < 60:      return f"{seconds:.1f}s"
@@ -202,6 +250,7 @@ def _plot_gpu_util(
     monitor: _GpuMonitor,
     doc_boundaries: list[tuple[float, str]],  # [(wall_time, doc_name)]
     backend: str,
+    gpu_indices: list[int] | None = None,
 ) -> Path:
     fig, ax = plt.subplots(figsize=(14, 4))
     fig.patch.set_facecolor("#1a1a2e")
@@ -223,8 +272,9 @@ def _plot_gpu_util(
     ax.set_ylim(0, 102)
     ax.set_xlabel("Wall-clock time (s)", color="#aaa")
     ax.set_ylabel("GPU utilisation (%)", color="#aaa")
+    gpu_label = f"GPU(s) {gpu_indices}" if gpu_indices else "GPU"
     ax.set_title(
-        f"GPU utilisation during benchmark — {backend}"
+        f"GPU utilisation during benchmark — {backend}  |  {gpu_label}"
         f"  |  mean {monitor.mean:.1f}%  peak {monitor.peak:.1f}%",
         color="white", fontsize=10, pad=10,
     )
@@ -333,16 +383,38 @@ def main() -> None:
                              "MinerU default is 0.5.")
     parser.add_argument("--repeats", type=int, default=1,
                         help="Timed passes per document (default 1).")
-    parser.add_argument("--gpu-index", type=int, default=None,
-                        help="Physical GPU index for nvidia-smi monitoring. "
-                             "Defaults to the first value in CUDA_VISIBLE_DEVICES, "
+    parser.add_argument("--gpu-index", type=str, default=None,
+                        metavar="IDX",
+                        help="Physical GPU index or comma-separated list for multi-GPU "
+                             "(e.g. '4' or '4,5'). Sets CUDA_VISIBLE_DEVICES and "
+                             "configures nvidia-smi monitoring (utilisation is averaged "
+                             "across all listed GPUs). Defaults to CUDA_VISIBLE_DEVICES "
                              "or 0 if unset.")
+    parser.add_argument("--server-url", type=str, default=None,
+                        help="VLM server or mineru-router base URL for http-client "
+                             "backends (e.g. 'http://localhost:8002'). Required when "
+                             "--backend is hybrid-http-client.")
+    parser.add_argument("--tensor-parallel-size", type=int, default=None, metavar="N",
+                        help="Number of GPUs to use for vLLM tensor parallelism. "
+                             "Requires CUDA_VISIBLE_DEVICES (or --gpu-index) to expose N "
+                             "GPUs. No-op for pipeline and http-client backends. "
+                             "See Strategy B in the module docstring.")
     parser.add_argument("--batch-size", type=int, default=None, metavar="N",
                         help="Number of documents to batch together (pipeline backend only).")
     parser.add_argument("--window-size", type=int, default=None, metavar="N",
                         help="MinerU processing window size.")
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     args = parser.parse_args()
+
+    # Resolve physical GPU indices and set CUDA_VISIBLE_DEVICES as early as
+    # possible — BEFORE any extract()/vLLM init. vLLM binds to whatever GPUs
+    # are visible at init time, so setting this after the warm-up call would
+    # have no effect on which physical GPU(s) actually run compute; only
+    # nvidia-smi monitoring would respect it.
+    gpu_indices = _resolve_gpu_indices(args.gpu_index, os.environ.get("CUDA_VISIBLE_DEVICES"))
+    if args.gpu_index is not None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in gpu_indices)
+    print(f"[monitor] polling GPU(s) {gpu_indices} via nvidia-smi (util averaged across all)")
 
     # Collect PDFs
     if args.pdf:
@@ -382,24 +454,16 @@ def main() -> None:
         output_dir=args.data_dir / warmup_pdf.stem / args.backend / "warmup",
         backend=args.backend,
         start_page=0, end_page=2,
+        server_url=args.server_url,
         gpu_memory_utilization=gmu,
+        tensor_parallel_size=args.tensor_parallel_size,
     )
     init_overhead = time.perf_counter() - t_wu0 - wu.duration_seconds
     print(f"[warmup] done — reported {wu.duration_seconds:.1f}s, "
           f"init overhead ≈ {init_overhead:.1f}s")
 
-    # Determine physical GPU index for nvidia-smi (CUDA_VISIBLE_DEVICES remaps
-    # logical GPU 0 to the first listed physical GPU).
-    import os
-    if args.gpu_index is not None:
-        gpu_phys = args.gpu_index
-    else:
-        cvd = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-        gpu_phys = int(cvd.split(",")[0]) if cvd else 0
-    print(f"[monitor] polling GPU {gpu_phys} via nvidia-smi")
-
     # ── Timed benchmark runs ──────────────────────────────────────────────────
-    monitor = _GpuMonitor(gpu_index=gpu_phys, interval=0.5)
+    monitor = _GpuMonitor(gpu_indices=gpu_indices, interval=0.5)
     monitor.start()
 
     records: list[dict] = []
@@ -420,7 +484,9 @@ def main() -> None:
                     pdf_paths=chunk,
                     output_dir=out_root,
                     backend=args.backend,
+                    server_url=args.server_url,
                     gpu_memory_utilization=gmu,
+                    tensor_parallel_size=args.tensor_parallel_size,
                 )
                 for pdf, result in zip(chunk, chunk_results):
                     doc_name = pdf.stem
@@ -463,7 +529,9 @@ def main() -> None:
                     pdf_path=pdf,
                     output_dir=run_dir,
                     backend=args.backend,
+                    server_url=args.server_url,
                     gpu_memory_utilization=gmu,
+                    tensor_parallel_size=args.tensor_parallel_size,
                 )
                 spp = result.duration_seconds / max(result.page_count, 1)
                 pps = max(result.page_count, 1) / result.duration_seconds
@@ -524,7 +592,7 @@ def main() -> None:
 
     # ── Plots ─────────────────────────────────────────────────────────────────
     lat_path  = _plot_latency(records, args.backend, gmu)
-    util_path = _plot_gpu_util(monitor, doc_boundaries, args.backend)
+    util_path = _plot_gpu_util(monitor, doc_boundaries, args.backend, gpu_indices)
     proj_path = _plot_projection(mean_spp, std_spp, args.backend, gmu)
 
     print(f"\n  Latency plot    : {lat_path}")

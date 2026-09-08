@@ -35,6 +35,8 @@ uv run main.py --pdf path/to/doc.pdf
 - [`scripts/benchmark_throughput.py`](scripts/benchmark_throughput.py) — GPU throughput benchmark
 - [`scripts/classify_figures.py`](scripts/classify_figures.py) — Enrich XML `<figure>` elements with SigLIP2 categories
 - [`scripts/visualize.py`](scripts/visualize.py) — Standalone visualizations from existing JSON
+- [`scripts/run_doctasks.py`](scripts/run_doctasks.py) — Run every registered SSL task composer over `output/`
+- [`viz/task_visualizer/server.py`](viz/task_visualizer/server.py) — Interactive SSL task inspector (`uv run viz/task_visualizer/server.py`, then open http://localhost:8767)
 
 ---
 

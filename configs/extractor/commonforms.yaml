@@ -1,0 +1,35 @@
+# ─────────────────────────────────────────────
+# DocMaestro — CommonForms Config
+# ─────────────────────────────────────────────
+# Inputs are the per-document PDFs materialized by
+# scripts/prepare_commonforms.py from the CommonForms validation split.
+
+extraction:
+  backend: hybrid-auto-engine
+  language: en
+  start_page: 0
+  end_page: null
+  server_url: null
+  # vLLM reserves this fraction upfront in its own process. The hybrid backend's
+  # torch-side layout/OCR work runs outside that budget on the same GPU, so leave
+  # headroom (0.70 ≈ 14 GiB free on 46 GiB cards) to avoid CUDA OOM on big PDFs.
+  gpu_memory_utilization: 0.70
+  window_size: 128
+
+paths:
+  data_dir: /data/151-1/users/mserrao/commonforms
+  output_dir: /data/151-1/users/mserrao/commonforms
+  # Resume/retry manifest (JSONL) lives here, on the persistent data volume and
+  # separate from the output tree, so restarts skip already-done documents.
+  state_dir: /data/151-1/users/mserrao/commonforms-state
+
+title_aided:
+  enabled: false
+
+figure_classification:
+  enabled: false
+  model: google/siglip2-base-patch16-384
+  batch_size: 32
+  device: cuda
+
+wandb_enabled: true

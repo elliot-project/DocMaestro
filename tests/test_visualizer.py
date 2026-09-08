@@ -4,7 +4,6 @@ from src.visualizer import (
     CONTENT_TYPE_COLORS,
     _build_networkx_graph,
     _count_leaves,
-    _flatten_tree_for_render,
     _type_color,
     _type_label,
     build_doc_tree,
@@ -164,38 +163,6 @@ class TestCountLeaves:
     def test_only_title_children_returns_empty(self):
         node = {"children": [{"type": "title", "children": []}]}
         assert _count_leaves(node) == {}
-
-
-class TestFlattenTreeForRender:
-    def test_flat_list_has_one_row_per_child(self):
-        tree = build_doc_tree(
-            [
-                {"type": "text", "text": "H1", "text_level": 1, "page_idx": 0},
-                {"type": "text", "text": "H2", "text_level": 2, "page_idx": 1},
-            ]
-        )
-        rows = _flatten_tree_for_render(tree)
-        assert len(rows) == 2
-
-    def test_depth_increases_for_nested_titles(self):
-        tree = build_doc_tree(
-            [
-                {"type": "text", "text": "H1", "text_level": 1, "page_idx": 0},
-                {"type": "text", "text": "H2", "text_level": 2, "page_idx": 0},
-            ]
-        )
-        rows = _flatten_tree_for_render(tree)
-        h1_depth = rows[0][0]
-        h2_depth = rows[1][0]
-        assert h2_depth > h1_depth
-
-    def test_max_items_truncates(self):
-        items = [
-            {"type": "text", "text": f"H{i}", "text_level": 1, "page_idx": i} for i in range(20)
-        ]
-        tree = build_doc_tree(items)
-        rows = _flatten_tree_for_render(tree, max_items=5)
-        assert len(rows) <= 6  # 5 items + possible truncation marker
 
 
 class TestDomGraphViz:

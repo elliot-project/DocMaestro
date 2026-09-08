@@ -7,11 +7,13 @@ import tarfile
 from pathlib import Path
 
 from src.task_composer.base import Sample
-from src.task_composer.shard_writer import ShardWriter
+from src.task_composer.shard_writer import ShardBuffer, ShardWriter
 
 
 def _make_sample(key: str, text: str = "hello") -> Sample:
-    return Sample(key=key, payload={"__key__": key, "target.txt": text, "json": {"task_type": "test"}})
+    return Sample(
+        key=key, payload={"__key__": key, "target.txt": text, "json": {"task_type": "test"}}
+    )
 
 
 def _read_tar_entries(path: Path) -> dict[str, bytes]:
@@ -119,3 +121,96 @@ class TestShardWriterCompress:
         paths = writer.write([_make_sample("k0", text="compressed")])
         entries = _read_tar_entries(paths[0])
         assert entries["k0.target.txt"] == b"compressed"
+
+
+class TestShardWriterStartIndex:
+    """start_index lets a caller append shards without clobbering earlier ones."""
+
+    def test_shard_numbering_starts_at_given_index(self, tmp_path):
+        w = ShardWriter(tmp_path, "t", shard_size=2)
+        paths = w.write([_make_sample(f"k{i}") for i in range(3)], start_index=5)
+        assert [p.name for p in paths] == ["t-00005.tar", "t-00006.tar"]
+
+    def test_default_start_index_is_zero(self, tmp_path):
+        w = ShardWriter(tmp_path, "t", shard_size=2)
+        paths = w.write([_make_sample("k0")])
+        assert paths[0].name == "t-00000.tar"
+
+    def test_successive_writes_do_not_overwrite(self, tmp_path):
+        w = ShardWriter(tmp_path, "t", shard_size=1)
+        w.write([_make_sample("a")], start_index=0)
+        w.write([_make_sample("b")], start_index=1)
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["t-00000.tar", "t-00001.tar"]
+        assert "a.target.txt" in _read_tar_entries(tmp_path / "t-00000.tar")
+        assert "b.target.txt" in _read_tar_entries(tmp_path / "t-00001.tar")
+
+
+class TestShardBuffer:
+    """ShardBuffer accumulates samples across documents and flushes full shards."""
+
+    def test_flushes_when_buffer_reaches_shard_size(self, tmp_path):
+        buf = ShardBuffer(tmp_path, shard_size=2)
+        buf.add("ocr", [_make_sample("a"), _make_sample("b")])
+        assert (tmp_path / "ocr-00000.tar").exists()
+
+    def test_holds_partial_shard_until_close(self, tmp_path):
+        buf = ShardBuffer(tmp_path, shard_size=5)
+        buf.add("ocr", [_make_sample("a")])
+        assert list(tmp_path.iterdir()) == []
+        buf.close()
+        assert (tmp_path / "ocr-00000.tar").exists()
+
+    def test_samples_from_several_documents_share_a_shard(self, tmp_path):
+        buf = ShardBuffer(tmp_path, shard_size=4)
+        buf.add("ocr", [_make_sample("doc1_a"), _make_sample("doc1_b")])
+        buf.add("ocr", [_make_sample("doc2_a"), _make_sample("doc2_b")])
+        buf.close()
+        entries = _read_tar_entries(tmp_path / "ocr-00000.tar")
+        assert "doc1_a.target.txt" in entries
+        assert "doc2_b.target.txt" in entries
+
+    def test_shard_indices_continue_across_flushes(self, tmp_path):
+        buf = ShardBuffer(tmp_path, shard_size=1)
+        buf.add("ocr", [_make_sample("a"), _make_sample("b")])
+        buf.add("ocr", [_make_sample("c")])
+        buf.close()
+        assert sorted(p.name for p in tmp_path.iterdir()) == [
+            "ocr-00000.tar",
+            "ocr-00001.tar",
+            "ocr-00002.tar",
+        ]
+
+    def test_tasks_are_sharded_independently(self, tmp_path):
+        buf = ShardBuffer(tmp_path, shard_size=2)
+        buf.add("ocr", [_make_sample("a")])
+        buf.add("layout", [_make_sample("b")])
+        buf.close()
+        assert (tmp_path / "ocr-00000.tar").exists()
+        assert (tmp_path / "layout-00000.tar").exists()
+
+    def test_close_returns_written_paths_per_task(self, tmp_path):
+        buf = ShardBuffer(tmp_path, shard_size=1)
+        buf.add("ocr", [_make_sample("a"), _make_sample("b")])
+        buf.add("layout", [_make_sample("c")])
+        written = buf.close()
+        assert [p.name for p in written["ocr"]] == ["ocr-00000.tar", "ocr-00001.tar"]
+        assert [p.name for p in written["layout"]] == ["layout-00000.tar"]
+
+    def test_close_is_idempotent(self, tmp_path):
+        buf = ShardBuffer(tmp_path, shard_size=5)
+        buf.add("ocr", [_make_sample("a")])
+        buf.close()
+        buf.close()
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["ocr-00000.tar"]
+
+    def test_adding_no_samples_writes_nothing(self, tmp_path):
+        buf = ShardBuffer(tmp_path, shard_size=2)
+        buf.add("ocr", [])
+        buf.close()
+        assert list(tmp_path.iterdir()) == []
+
+    def test_compress_produces_tar_gz(self, tmp_path):
+        buf = ShardBuffer(tmp_path, shard_size=1, compress=True)
+        buf.add("ocr", [_make_sample("a")])
+        buf.close()
+        assert (tmp_path / "ocr-00000.tar.gz").exists()

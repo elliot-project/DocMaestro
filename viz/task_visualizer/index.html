@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DocTask Visualizer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0f1117;
+    --surface:  #1a1d27;
+    --surface2: #222536;
+    --surface3: #2a2d42;
+    --border:   #2a2d3d;
+    --accent:   #4A90E2;
+    --green:    #7ED321;
+    --red:      #D0021B;
+    --orange:   #F5A623;
+    --purple:   #BD10E0;
+    --teal:     #50E3C2;
+    --yellow:   #F5E642;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --sidebar-w: 230px;
+    --page-panel-w: 320px;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+    font-size: 13px;
+  }
+
+  /* ── SIDEBAR ─────────────────────────────────────────────────────── */
+  #sidebar {
+    width: var(--sidebar-w);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  #sidebar-header {
+    padding: 12px 14px 8px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #sidebar-header h1 { font-size: 13px; font-weight: 700; }
+  #sidebar-header p  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  #doc-search { padding: 8px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  #doc-search input {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text); padding: 5px 8px; font-size: 12px; outline: none;
+  }
+  #doc-search input:focus { border-color: var(--accent); }
+  #doc-list { overflow-y: auto; flex: 1; }
+
+  .doc-item {
+    padding: 8px 14px; cursor: pointer; border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  .doc-item:hover  { background: var(--surface2); }
+  .doc-item.active { background: #1e2a45; border-left: 3px solid var(--accent); padding-left: 11px; }
+  .doc-name { font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .doc-meta  { color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+  /* ── MAIN ──────────────────────────────────────────────────────────── */
+  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* Toolbar */
+  #toolbar {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 7px 14px; display: flex; align-items: center; gap: 10px;
+    flex-shrink: 0; flex-wrap: wrap;
+  }
+  #task-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tab {
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    padding: 4px 9px; border-radius: 4px; cursor: pointer; font-size: 11px;
+    transition: all 0.12s; white-space: nowrap;
+  }
+  .tab:hover  { border-color: var(--accent); color: var(--text); }
+  .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .tab-dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    margin-right: 5px; vertical-align: middle;
+  }
+  #nav { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  #nav button {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 13px;
+    transition: background 0.1s;
+  }
+  #nav button:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
+  #nav button:disabled { opacity: 0.35; cursor: default; }
+  #sample-counter { color: var(--muted); font-size: 12px; min-width: 70px; text-align: center; }
+
+  /* Content */
+  #content { flex: 1; overflow-y: auto; padding: 14px; }
+  .state-msg { color: var(--muted); font-size: 14px; margin-top: 60px; text-align: center; }
+
+  /* ── SAMPLE CARD ─────────────────────────────────────────────────── */
+  #sample-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+
+  .sample-header {
+    padding: 9px 14px; border-bottom: 1px solid var(--border);
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    background: var(--surface2);
+  }
+  .sample-key  { font-family: monospace; font-size: 12px; color: var(--accent); }
+  .sample-meta { color: var(--muted); font-size: 11px; }
+  .view-badge  { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600; letter-spacing: 0.04em; }
+
+  /* ── CARD BODY: task content (top) then full-width page (bottom) ─── */
+  .card-body { display: flex; flex-direction: column; }
+
+  /* Task content panel — sits above the page, scrollable */
+  .task-panel { max-height: 310px; overflow-y: auto; }
+
+  /* Page preview panel — full width, flexible height */
+  .page-panel {
+    width: 100%;
+    flex: 1;
+    min-height: 400px;
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    background: #0a0c14;
+    overflow: hidden;
+  }
+  .page-panel-header {
+    padding: 8px 12px;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 700;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .page-panel-header span.pg-num { color: var(--text); font-weight: 600; }
+
+  /* Legend for bbox colours */
+  .legend { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; min-height: 0; }
+  .legend-item { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--muted); }
+  .legend-dot  { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+  .canvas-scroll { flex: 1; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 10px; background: #070810; }
+  .canvas-scroll canvas { max-width: 100%; max-height: none; display: block; border-radius: 3px; cursor: crosshair; box-shadow: 0 4px 24px rgba(0,0,0,0.6); }
+
+  .page-loading { color: var(--muted); font-size: 11px; padding: 20px; text-align: center; }
+  .page-no-pdf  { color: var(--muted); font-size: 11px; padding: 20px; text-align: center; opacity: 0.6; }
+
+  /* (task-panel max-height is set in card-body block above) */
+
+  /* ── INNER SPLIT ─────────────────────────────────────────────────── */
+  .panel-split { display: flex; flex: 1; overflow: hidden; }
+  .half { flex: 1; padding: 14px; overflow-y: auto; }
+  .half + .half { border-left: 1px solid var(--border); }
+  .panel-full { padding: 14px; overflow-y: auto; flex: 1; }
+
+  .section-label {
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 10px; font-weight: 700;
+  }
+
+  /* ── REUSABLE COMPONENTS ─────────────────────────────────────────── */
+  .text-block {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 4px;
+    padding: 12px; font-size: 12px; line-height: 1.7; color: var(--text);
+    white-space: pre-wrap; max-height: 380px; overflow-y: auto;
+  }
+  .code-block {
+    background: #0d1117; border: 1px solid var(--border); border-radius: 4px;
+    padding: 12px; font-size: 11px; line-height: 1.6; color: #a5d6ff;
+    white-space: pre-wrap; overflow-x: auto; max-height: 380px; overflow-y: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  .list-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; background: var(--surface2); border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
+  .list-num  { font-family: monospace; font-size: 11px; color: var(--muted); min-width: 22px; padding-top: 1px; }
+  .list-text { color: var(--text); line-height: 1.4; flex: 1; }
+
+  .tag-badge { font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; flex-shrink: 0; }
+  .tag-title       { background: rgba(74,144,226,0.2);  color: #4A90E2; }
+  .tag-text-block  { background: rgba(126,211,33,0.15); color: #7ED321; }
+  .tag-figure      { background: rgba(189,16,224,0.2);  color: #BD10E0; }
+  .tag-chart       { background: rgba(233,30,140,0.2);  color: #E91E8C; }
+  .tag-table       { background: rgba(245,166,35,0.2);  color: #F5A623; }
+  .tag-caption     { background: rgba(80,227,194,0.15); color: #50E3C2; }
+  .tag-math-block  { background: rgba(184,134,11,0.2);  color: #d4a017; }
+  .tag-code-block  { background: rgba(0,188,212,0.15);  color: #00BCD4; }
+  .tag-default     { background: rgba(120,144,156,0.2); color: #78909C; }
+
+  /* Figure selection */
+  .candidates-grid { display: flex; gap: 10px; flex-wrap: wrap; }
+  .candidate { flex: 1; min-width: 100px; max-width: 200px; border: 2px solid var(--border); border-radius: 6px; overflow: hidden; transition: border-color 0.15s; }
+  .candidate.correct   { border-color: var(--green); }
+  .candidate.distractor { opacity: 0.6; }
+  .candidate img { width: 100%; height: 140px; object-fit: contain; background: #111; display: block; }
+  .candidate-label { padding: 5px 7px; font-size: 11px; background: var(--surface2); }
+  .candidate.correct .candidate-label   { color: var(--green); font-weight: 600; }
+  .candidate.distractor .candidate-label { color: var(--muted); }
+  .no-img { width: 100%; height: 140px; background: #111; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; }
+
+  /* Caption */
+  .element-img { max-width: 100%; max-height: 260px; object-fit: contain; border: 1px solid var(--border); border-radius: 4px; background: #111; display: block; margin-bottom: 10px; }
+  .context-item { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; background: var(--surface2); border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
+  .context-text { color: var(--text); line-height: 1.4; flex: 1; }
+  .gt-box { background: rgba(80,227,194,0.08); border: 1px solid var(--teal); border-radius: 6px; padding: 12px; font-size: 13px; line-height: 1.6; margin-top: 4px; }
+  .bbox-label { font-family: monospace; font-size: 11px; color: var(--muted); }
+
+  /* BBox overlay */
+  .bbox-item { display: flex; align-items: flex-start; gap: 8px; padding: 5px 10px; background: var(--surface2); border-radius: 4px; margin-bottom: 3px; font-size: 12px; }
+  .bbox-coord { font-family: monospace; font-size: 10px; color: var(--muted); flex-shrink: 0; }
+
+  /* XML diff */
+  .xml-half { flex: 1; padding: 14px; overflow: auto; }
+  .xml-half + .xml-half { border-left: 1px solid var(--border); }
+
+  /* Page sequence */
+  .page-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 7px 12px; font-size: 12px; display: flex; gap: 10px; align-items: center; margin-bottom: 4px; }
+  .page-pos  { font-family: monospace; color: var(--muted); min-width: 26px; }
+
+  /* Canvas layout */
+  .canvas-item { display: flex; gap: 8px; align-items: flex-start; padding: 5px 10px; background: var(--surface2); border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
+  .canvas-idx  { font-family: monospace; font-size: 11px; color: var(--muted); min-width: 20px; }
+  .canvas-bbox { font-family: monospace; font-size: 10px; color: var(--teal); flex-shrink: 0; }
+
+  /* Figure page map */
+  .fig-item { display: flex; gap: 10px; align-items: center; padding: 6px 10px; background: var(--surface2); border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
+  .fig-src  { font-family: monospace; font-size: 11px; color: var(--accent); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fig-page { font-family: monospace; font-size: 11px; color: var(--yellow); background: rgba(245,230,66,0.1); padding: 2px 6px; border-radius: 3px; }
+
+  /* KV form */
+  .kv-item { display: flex; gap: 10px; align-items: center; padding: 6px 10px; background: var(--surface2); border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
+  .kv-cat  { font-weight: 600; color: var(--teal); min-width: 110px; }
+  .kv-bbox { font-family: monospace; font-size: 10px; color: var(--muted); }
+
+  /* Markdown */
+  .md-render { font-size: 13px; line-height: 1.7; color: var(--text); }
+  .md-render h1, .md-render h2, .md-render h3 { color: var(--accent); margin: 10px 0 5px; }
+  .md-render p  { margin-bottom: 8px; }
+  .md-render pre { background: #0d1117; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; overflow-x: auto; margin-bottom: 8px; }
+
+  /* Tooltip overlay for bbox hover */
+  #bbox-tooltip {
+    position: fixed; background: rgba(0,0,0,0.85); border: 1px solid var(--border);
+    color: var(--text); font-size: 11px; padding: 5px 8px; border-radius: 4px;
+    pointer-events: none; display: none; z-index: 1000; font-family: monospace;
+    max-width: 240px; white-space: nowrap;
+  }
+
+  /* Spinner */
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 5px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty-pill { display: inline-block; color: var(--muted); font-size: 11px; font-style: italic; }
+</style>
+</head>
+<body>
+
+<div id="bbox-tooltip"></div>
+
+<!-- ── SIDEBAR ───────────────────────────────────────────────────────────── -->
+<aside id="sidebar">
+  <div id="sidebar-header">
+    <h1>DocTask Visualizer</h1>
+    <p id="doc-count">Loading…</p>
+  </div>
+  <div id="doc-search">
+    <input id="search-input" type="text" placeholder="Filter documents…">
+  </div>
+  <div id="doc-list"></div>
+</aside>
+
+<!-- ── MAIN ──────────────────────────────────────────────────────────────── -->
+<main id="main">
+  <div id="toolbar">
+    <div id="task-tabs"></div>
+    <div id="nav">
+      <button id="prev-btn" disabled>◄</button>
+      <span id="sample-counter">—</span>
+      <button id="next-btn" disabled>►</button>
+    </div>
+  </div>
+
+  <div id="content">
+    <p class="state-msg" id="empty-state">Select a document from the sidebar.</p>
+    <p class="state-msg" id="loading-state" style="display:none">
+      <span class="spinner"></span>Generating samples…
+    </p>
+    <p class="state-msg" id="error-state" style="display:none"></p>
+    <p class="state-msg" id="no-samples-state" style="display:none">
+      No samples for this task on this document.
+    </p>
+    <div id="sample-card" style="display:none"></div>
+  </div>
+</main>
+
+<script>
+// ── Constants ─────────────────────────────────────────────────────────────────
+const VIEW_COLORS = {
+  text:'#7ED321', bbox_overlay:'#F5A623', markdown:'#4A90E2',
+  xml_tree:'#50E3C2', xml_diff:'#BD10E0', image_grid:'#E91E8C',
+  page_sequence:'#F5E642', canvas_layout:'#FF7043',
+  figure_page_map:'#00BCD4', kv_form:'#B388FF',
+  caption:'#50E3C2', reading_order:'#7ED321',
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let allDocs = [], allTasks = [];
+let activeDocId = null, activeTask = null;
+let samples = [], sampleIdx = 0;
+// per-page element cache: "docId:pageIdx" → [{tag, bbox, text}]
+const elemCache = {};
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const docList    = document.getElementById('doc-list');
+const docCount   = document.getElementById('doc-count');
+const searchInput= document.getElementById('search-input');
+const taskTabs   = document.getElementById('task-tabs');
+const sampleCard = document.getElementById('sample-card');
+const counter    = document.getElementById('sample-counter');
+const prevBtn    = document.getElementById('prev-btn');
+const nextBtn    = document.getElementById('next-btn');
+const tooltip    = document.getElementById('bbox-tooltip');
+
+const states = {
+  empty: document.getElementById('empty-state'),
+  loading: document.getElementById('loading-state'),
+  error: document.getElementById('error-state'),
+  noSamples: document.getElementById('no-samples-state'),
+  card: sampleCard,
+};
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function showState(name) {
+  Object.entries(states).forEach(([k, el]) => { el.style.display = k === name ? '' : 'none'; });
+}
+
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function tagBadge(tag) {
+  const cls = ({
+    'title':'tag-title','text-block':'tag-text-block','figure':'tag-figure',
+    'chart':'tag-chart','table':'tag-table','caption':'tag-caption',
+    'math-block':'tag-math-block','code-block':'tag-code-block',
+  })[tag] || 'tag-default';
+  return `<span class="tag-badge ${cls}">${esc(tag)}</span>`;
+}
+
+function dot(vt) {
+  const c = VIEW_COLORS[vt] || '#78909C';
+  return `<span class="tab-dot" style="background:${c}"></span>`;
+}
+
+function renderEmpty(msg='(none)') { return `<span class="empty-pill">${msg}</span>`; }
+
+// ── Nav ───────────────────────────────────────────────────────────────────────
+function updateNav() {
+  const total = samples.length;
+  counter.textContent = total ? `${sampleIdx + 1} / ${total}` : '—';
+  prevBtn.disabled = sampleIdx <= 0;
+  nextBtn.disabled = sampleIdx >= total - 1;
+}
+prevBtn.addEventListener('click', () => { if (sampleIdx > 0) { sampleIdx--; renderSample(); } });
+nextBtn.addEventListener('click', () => { if (sampleIdx < samples.length-1) { sampleIdx++; renderSample(); } });
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft'  && !prevBtn.disabled) prevBtn.click();
+  if (e.key === 'ArrowRight' && !nextBtn.disabled) nextBtn.click();
+});
+
+// ── Task tabs ─────────────────────────────────────────────────────────────────
+function buildTabs(tasks) {
+  taskTabs.innerHTML = '';
+  tasks.forEach((t, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (i === 0 ? ' active' : '');
+    btn.dataset.task = t.task_name;
+    btn.title = t.description;
+    btn.innerHTML = `${dot(t.view_type)}${t.task_name.replace(/_/g,' ')}`;
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeTask = t.task_name;
+      if (activeDocId) loadSamples();
+    });
+    taskTabs.appendChild(btn);
+  });
+  if (tasks.length) activeTask = tasks[0].task_name;
+}
+
+// ── Doc list ──────────────────────────────────────────────────────────────────
+function renderDocList(docs) {
+  const q = searchInput.value.toLowerCase();
+  const filtered = q ? docs.filter(d => d.doc_name.toLowerCase().includes(q)) : docs;
+  docList.innerHTML = '';
+  filtered.forEach(doc => {
+    const el = document.createElement('div');
+    el.className = 'doc-item' + (doc.doc_id === activeDocId ? ' active' : '');
+    el.dataset.id = doc.doc_id;
+    el.innerHTML = `
+      <div class="doc-name">${esc(doc.doc_name)}</div>
+      <div class="doc-meta">${doc.page_count} pages${doc.has_images ? '' : ' · <span style="color:var(--red)">no imgs</span>'}</div>`;
+    el.addEventListener('click', () => selectDoc(doc.doc_id));
+    docList.appendChild(el);
+  });
+}
+searchInput.addEventListener('input', () => renderDocList(allDocs));
+
+function selectDoc(docId) {
+  activeDocId = docId;
+  renderDocList(allDocs);
+  loadSamples();
+}
+
+// ── Sample loading ─────────────────────────────────────────────────────────────
+async function loadSamples() {
+  showState('loading');
+  samples = []; sampleIdx = 0; updateNav();
+  try {
+    const res = await fetch(`/api/docs/${activeDocId}/samples/${activeTask}`);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await res.json();
+    samples = data.samples;
+    if (!samples.length) { showState('noSamples'); return; }
+    showState('card');
+    renderSample();
+  } catch(err) {
+    states.error.textContent = `Error: ${err.message}`;
+    showState('error');
+  }
+}
+
+// ── Page elements cache ───────────────────────────────────────────────────────
+async function getPageElements(docId, pageIdx) {
+  const key = `${docId}:${pageIdx}`;
+  if (!elemCache[key]) {
+    try {
+      const r = await fetch(`/api/docs/${docId}/pages/${pageIdx}/elements`);
+      elemCache[key] = r.ok ? (await r.json()).elements : [];
+    } catch { elemCache[key] = []; }
+  }
+  return elemCache[key];
+}
+
+// ── Page Canvas ───────────────────────────────────────────────────────────────
+function hex2rgba(hex, alpha) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+async function renderPageCanvas(s) {
+  const panel = document.getElementById('page-panel');
+  if (!panel) return;
+
+  if (!s.has_page) {
+    panel.innerHTML = '<div class="page-no-pdf">No page reference<br>for this task</div>';
+    return;
+  }
+
+  panel.innerHTML = `<div class="page-loading"><span class="spinner"></span>Loading page…</div>`;
+
+  // Fetch all page elements for grey background layer
+  const allElems = await getPageElements(activeDocId, s.page_idx);
+
+  // Build HTML structure
+  const highlights = s.highlight_bboxes || [];
+
+  // Legend items from unique colours in highlights
+  const legendColors = [...new Map(
+    highlights.filter(h => h.label).map(h => [h.color, h.label])
+  ).entries()].slice(0, 8);
+
+  const legendHtml = legendColors.length
+    ? legendColors.map(([col, lbl]) =>
+        `<div class="legend-item"><div class="legend-dot" style="background:${col}"></div>${esc(lbl)}</div>`
+      ).join('')
+    : '';
+
+  panel.innerHTML = `
+    <div class="page-panel-header">
+      Page <span class="pg-num">${s.page_idx}</span>
+      &nbsp;·&nbsp; ${s.page_width|0}×${s.page_height|0}
+    </div>
+    ${legendHtml ? `<div class="legend">${legendHtml}</div>` : ''}
+    <div class="canvas-scroll" id="canvas-scroll">
+      <canvas id="page-canvas"></canvas>
+    </div>`;
+
+  const canvas = document.getElementById('page-canvas');
+  const ctx    = canvas.getContext('2d');
+
+  // Load page image
+  const img = new Image();
+  img.onload = () => {
+    // Draw at the panel's display width for a big, crisp render
+    const scroll   = document.getElementById('canvas-scroll');
+    const panelW   = scroll ? scroll.clientWidth - 20 : img.naturalWidth;
+    const aspect   = img.naturalHeight / img.naturalWidth;
+    const drawW    = panelW; // Always scale to full available width
+    const drawH    = Math.round(drawW * aspect);
+
+    canvas.width  = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.style.width  = drawW + 'px';
+    canvas.style.height = drawH + 'px';
+
+    // BBoxes in XML are normalized to a 0-1000 range, not page dims
+    const scaleX = img.naturalWidth  / 1000;
+    const scaleY = img.naturalHeight / 1000;
+
+    // Draw page
+    ctx.drawImage(img, 0, 0);
+
+    // ① Grey background layer — all XML elements
+    if (allElems.length > 0) {
+      ctx.save();
+      allElems.forEach(el => {
+        const [x1,y1,x2,y2] = el.bbox;
+        ctx.strokeStyle = 'rgba(100,116,139,0.35)';
+        ctx.lineWidth   = 1;
+        ctx.strokeRect(x1*scaleX, y1*scaleY, (x2-x1)*scaleX, (y2-y1)*scaleY);
+      });
+      ctx.restore();
+    }
+
+    // ② Highlight layer — task-specific coloured boxes
+    highlights.forEach(h => {
+      if (!h.bbox) return;
+      const [x1,y1,x2,y2] = h.bbox;
+      const px = x1*scaleX, py = y1*scaleY;
+      const pw = (x2-x1)*scaleX, ph = (y2-y1)*scaleY;
+
+      // Fill
+      ctx.fillStyle = hex2rgba(h.color, 0.22);
+      ctx.fillRect(px, py, pw, ph);
+      // Border
+      ctx.strokeStyle = h.color;
+      ctx.lineWidth   = Math.max(1.5, 1.5 * Math.min(scaleX, scaleY));
+      ctx.strokeRect(px, py, pw, ph);
+      // Label
+      if (h.label) {
+        const fs = Math.max(10, 11 * Math.min(scaleX, scaleY));
+        ctx.font      = `bold ${fs}px Inter, system-ui, sans-serif`;
+        ctx.fillStyle = h.color;
+        const tw = ctx.measureText(h.label).width;
+        // small pill behind label
+        ctx.fillStyle = hex2rgba(h.color, 0.8);
+        ctx.fillRect(px, py - fs - 3, tw + 8, fs + 4);
+        ctx.fillStyle = '#000';
+        ctx.fillText(h.label, px + 4, py - 3);
+      }
+    });
+
+    // ③ Hover tooltip: show element tag + text on mouse move
+    const canvasRect = () => canvas.getBoundingClientRect();
+
+    canvas.onmousemove = (e) => {
+      const r     = canvasRect();
+      const displayW = r.width;
+      const displayH = r.height;
+      const mx = (e.clientX - r.left) * (canvas.width  / displayW);
+      const my = (e.clientY - r.top)  * (canvas.height / displayH);
+
+      // Check highlights first (higher priority)
+      let found = null;
+      for (const h of [...highlights].reverse()) {
+        if (!h.bbox) continue;
+        const [x1,y1,x2,y2] = h.bbox;
+        if (mx >= x1*scaleX && mx <= x2*scaleX && my >= y1*scaleY && my <= y2*scaleY) {
+          found = { label: h.label || '?', color: h.color, from: 'highlight' };
+          break;
+        }
+      }
+      if (!found) {
+        for (const el of [...allElems].reverse()) {
+          const [x1,y1,x2,y2] = el.bbox;
+          if (mx >= x1*scaleX && mx <= x2*scaleX && my >= y1*scaleY && my <= y2*scaleY) {
+            found = { label: `<${el.tag}> ${el.text ? '– "' + el.text.slice(0,40) + '"' : ''}`, color: '#64748b', from: 'element' };
+            break;
+          }
+        }
+      }
+
+      if (found) {
+        tooltip.style.display = 'block';
+        tooltip.style.left    = (e.clientX + 14) + 'px';
+        tooltip.style.top     = (e.clientY + 10) + 'px';
+        tooltip.style.color   = found.color;
+        tooltip.textContent   = found.label;
+      } else {
+        tooltip.style.display = 'none';
+      }
+    };
+    canvas.onmouseleave = () => { tooltip.style.display = 'none'; };
+  };
+
+  img.onerror = () => {
+    panel.innerHTML = '<div class="page-no-pdf">PDF page not available</div>';
+  };
+
+  img.src = `/api/docs/${activeDocId}/pages/${s.page_idx}/image`;
+}
+
+// ── Master renderer ───────────────────────────────────────────────────────────
+function renderSample() {
+  updateNav();
+  const s = samples[sampleIdx];
+  if (!s) return;
+
+  const spec     = allTasks.find(t => t.task_name === s.task_name) || {};
+  const viewType = s.view_type || spec.view_type || 'text';
+  const c        = VIEW_COLORS[viewType] || '#78909C';
+
+  const RENDERERS = {
+    image_grid: renderFigSel, caption: renderCaption, reading_order: renderReadOrd,
+    text: renderText, bbox_overlay: renderBboxOverlay, markdown: renderMarkdown,
+    xml_tree: renderXmlTree, xml_diff: renderXmlDiff, page_sequence: renderPageSeq,
+    canvas_layout: renderCanvas, figure_page_map: renderFigPageMap, kv_form: renderKvForm,
+  };
+
+  const taskContent = (RENDERERS[viewType] || renderRaw)(s);
+  const pageInfo    = s.page_idx != null ? ` · page ${s.page_idx}` : '';
+
+  sampleCard.innerHTML = `
+    <div class="sample-header">
+      <span class="sample-key">${esc(s.key)}</span>
+      <span class="view-badge" style="background:${c}22;color:${c}">${esc(viewType)}</span>
+      <span class="sample-meta">${esc(s.task_name)}${pageInfo}</span>
+    </div>
+    <div class="card-body">
+      <div class="task-panel">${taskContent}</div>
+      <div class="page-panel" id="page-panel">
+        <div class="page-loading"><span class="spinner"></span>Loading page…</div>
+      </div>
+    </div>`;
+
+  renderPageCanvas(s);
+}
+
+// ── view_type renderers ────────────────────────────────────────────────────────
+
+function renderFigSel(s) {
+  const text  = (s.input_text || '').trim() || '(no page text)';
+  const cands = (s.candidates || []).map(c => {
+    const cls = c.is_correct ? 'candidate correct' : 'candidate distractor';
+    const lbl = c.is_correct ? '✓ Ground Truth' : 'Distractor';
+    return `<div class="${cls}">
+      <img src="${esc(c.image_url)}" alt="candidate"
+           onerror="this.parentElement.innerHTML='<div class=no-img>Image not found</div>'">
+      <div class="candidate-label">${lbl} · p.${c.page_origin}</div>
+    </div>`;
+  }).join('');
+  return `<div class="panel-split">
+    <div class="half">
+      <div class="section-label">Page Context</div>
+      <div class="text-block">${esc(text)}</div>
+    </div>
+    <div class="half">
+      <div class="section-label">Candidates (label = ${s.label})</div>
+      <div class="candidates-grid">${cands || renderEmpty()}</div>
+    </div>
+  </div>`;
+}
+
+function renderCaption(s) {
+  const imgHtml = s.image_url
+    ? `<img class="element-img" src="${esc(s.image_url)}" alt="element"
+           onerror="this.outerHTML='<div class=no-img style=height:100px>Image not found</div>'">`
+    : `<div class="no-img" style="height:100px">No image</div>`;
+  const ctx = items => (items||[]).length
+    ? items.map(e => `<div class="context-item">${tagBadge(e.tag)}<span class="context-text">${esc(e.text||'(empty)')}</span></div>`).join('')
+    : renderEmpty('none');
+  return `<div class="panel-split">
+    <div class="half">
+      <div class="section-label">Element Crop</div>${imgHtml}
+      <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap">
+        ${tagBadge(s.element_tag)}
+        <span class="bbox-label">${esc(s.bbox)}</span>
+      </div>
+    </div>
+    <div class="half">
+      <div style="margin-bottom:12px"><div class="section-label">Preceding Context</div>${ctx(s.preceding)}</div>
+      <div style="margin-bottom:12px"><div class="section-label">Following Context</div>${ctx(s.following)}</div>
+      <div><div class="section-label">Ground Truth Caption</div><div class="gt-box">${esc(s.gt_caption)}</div></div>
+    </div>
+  </div>`;
+}
+
+function renderReadOrd(s) {
+  const shuffled = s.shuffled || [], target = s.target || [];
+  const correct  = target.map(t => shuffled[t]);
+  const ROW_COLORS = ['#4A90E2','#7ED321','#BD10E0','#F5A623','#50E3C2','#E91E8C','#FF7043','#00BCD4','#B388FF','#F5E642'];
+  const item = (it, pos, fromIdx) => {
+    const c = ROW_COLORS[it.idx % ROW_COLORS.length];
+    return `<div class="list-item" style="border-left:3px solid ${c}">
+      <span class="list-num">${pos}</span>
+      ${tagBadge(it.tag)}
+      <span class="list-text">${esc(it.text||'(empty)')}</span>
+      ${fromIdx != null ? `<span style="font-size:10px;color:var(--muted);font-family:monospace;flex-shrink:0">← #${fromIdx}</span>` : ''}
+    </div>`;
+  };
+  return `<div class="panel-split">
+    <div class="half">
+      <div class="section-label">Input (Shuffled)</div>
+      ${shuffled.map((it,i) => item(it,i,null)).join('') || renderEmpty()}
+    </div>
+    <div class="half">
+      <div class="section-label">Ground Truth Order</div>
+      ${correct.map((it,i) => item(it,i,it.idx)).join('') || renderEmpty()}
+    </div>
+  </div>`;
+}
+
+function renderText(s) {
+  return `<div class="panel-full">
+    <div class="section-label">Full Page Text (Reading Order)</div>
+    <div class="text-block">${esc(s.text||'(empty)')}</div>
+  </div>`;
+}
+
+function renderBboxOverlay(s) {
+  const blocks = s.blocks || [];
+  const hasText = blocks.length && 'text' in blocks[0];
+  const COLORS = ['#F5A623','#4A90E2','#50E3C2','#BD10E0','#7ED321','#E91E8C','#FF7043'];
+  const rows = blocks.map((b,i) => {
+    const c = COLORS[i % COLORS.length];
+    return `<div class="bbox-item" style="border-left:3px solid ${c}">
+      <span class="list-num" style="color:${c}">${i}</span>
+      ${tagBadge(b.tag)}
+      ${hasText ? `<span class="list-text">${esc(b.text||'')}</span>` : ''}
+      <span class="bbox-coord">${esc(b.bbox)}</span>
+    </div>`;
+  }).join('');
+  return `<div class="panel-full">
+    <div class="section-label">${hasText ? 'OCR: Text + BBoxes' : 'Layout: Classes + BBoxes'} (${blocks.length})</div>
+    ${rows || renderEmpty('No blocks on this page')}
+  </div>`;
+}
+
+function renderMarkdown(s) {
+  let md = esc(s.markdown || '(empty)');
+  md = md.replace(/^######\s+(.+)$/gm,'<h6>$1</h6>').replace(/^#####\s+(.+)$/gm,'<h5>$1</h5>')
+    .replace(/^####\s+(.+)$/gm,'<h4>$1</h4>').replace(/^###\s+(.+)$/gm,'<h3>$1</h3>')
+    .replace(/^##\s+(.+)$/gm,'<h2>$1</h2>').replace(/^#\s+(.+)$/gm,'<h1>$1</h1>')
+    .replace(/```\n?([\s\S]*?)\n?```/g,'<pre>$1</pre>').replace(/\n\n/g,'</p><p>');
+  return `<div class="panel-full">
+    <div class="section-label">Semantic Markdown</div>
+    <div class="text-block md-render"><p>${md}</p></div>
+  </div>`;
+}
+
+function renderXmlTree(s) {
+  return `<div class="panel-full">
+    <div class="section-label">Bbox-free XML Tree</div>
+    <div class="code-block">${esc(s.xml||'(empty)')}</div>
+  </div>`;
+}
+
+function renderXmlDiff(s) {
+  return `<div class="panel-split" style="overflow:hidden">
+    <div class="xml-half">
+      <div class="section-label">Input (Corrupted)</div>
+      <div class="code-block">${esc(s.input_xml||'(empty)')}</div>
+    </div>
+    <div class="xml-half">
+      <div class="section-label">Target (Clean)</div>
+      <div class="code-block">${esc(s.target_xml||'(empty)')}</div>
+    </div>
+  </div>`;
+}
+
+function renderPageSeq(s) {
+  const shuffled = s.shuffled || [], target = s.target || [];
+  const correct  = target.map(t => shuffled[t]);
+  const card = (item, pos) => `<div class="page-card">
+    <span class="page-pos">${pos}</span>
+    <span>orig page <strong>${item.orig_page_idx}</strong></span>
+    ${(item.page_number_bboxes||[]).length ? `<span style="font-family:monospace;font-size:10px;color:var(--muted)">${item.page_number_bboxes.length} pg# bbox</span>` : ''}
+  </div>`;
+  return `<div class="panel-split">
+    <div class="half">
+      <div class="section-label">Input (Shuffled, ${shuffled.length} pages)</div>
+      ${shuffled.map((it,i) => card(it,i)).join('') || renderEmpty()}
+    </div>
+    <div class="half">
+      <div class="section-label">Ground Truth Order</div>
+      ${correct.map((it,i) => card(it,i)).join('') || renderEmpty()}
+    </div>
+  </div>`;
+}
+
+function renderCanvas(s) {
+  const elems  = s.elements || [], bboxes = s.target || [];
+  const COLORS = ['#4A90E2','#7ED321','#BD10E0','#F5A623','#50E3C2','#E91E8C','#FF7043','#00BCD4'];
+  return `<div class="panel-split">
+    <div class="half">
+      <div class="section-label">Shuffled Elements (${elems.length})</div>
+      ${elems.map((e,i) => `<div class="canvas-item" style="border-left:3px solid ${COLORS[i%COLORS.length]}">
+        <span class="canvas-idx">${e.idx}</span>${tagBadge(e.tag)}
+        <span class="list-text">${esc(e.text||'(empty)')}</span>
+      </div>`).join('') || renderEmpty()}
+    </div>
+    <div class="half">
+      <div class="section-label">Target BBoxes</div>
+      ${bboxes.map((b,i) => `<div class="canvas-item" style="border-left:3px solid ${COLORS[i%COLORS.length]}">
+        <span class="canvas-idx">${i}</span><span class="canvas-bbox">${esc(b)}</span>
+      </div>`).join('') || renderEmpty()}
+    </div>
+  </div>`;
+}
+
+function renderFigPageMap(s) {
+  const figs = s.figures || [], target = s.target || [], pages = s.pages || [];
+  return `<div class="panel-full">
+    <div class="section-label">Pages: [${pages.join(', ')}] · ${figs.length} figures</div>
+    ${figs.map((f,i) => `<div class="fig-item">
+      <span class="list-num">${f.idx}</span>
+      <span class="fig-src">${esc(f.src)}</span>
+      <span style="color:var(--muted);font-size:11px">→ page</span>
+      <span class="fig-page">${target[i] ?? '?'}</span>
+    </div>`).join('') || renderEmpty('No figures')}
+  </div>`;
+}
+
+function renderKvForm(s) {
+  const fields = s.fields || [];
+  return `<div class="panel-full">
+    <div class="section-label">Form Fields (${fields.length})${s.width ? ` · ${s.width}×${s.height}` : ''}</div>
+    ${fields.map((f,i) => `<div class="kv-item">
+      <span class="list-num">${i}</span>
+      <span class="kv-cat">${esc(f.category)}</span>
+      <span class="kv-bbox">${esc(JSON.stringify(f.bbox))}</span>
+    </div>`).join('') || renderEmpty('No fields')}
+  </div>`;
+}
+
+function renderRaw(s) {
+  return `<div class="panel-full">
+    <div class="section-label">Raw payload</div>
+    <div class="code-block">${esc(JSON.stringify(s.raw || s, null, 2))}</div>
+  </div>`;
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  const [tasksRes, docsRes] = await Promise.all([fetch('/api/tasks'), fetch('/api/docs')]);
+  allTasks = await tasksRes.json();
+  allDocs  = await docsRes.json();
+  buildTabs(allTasks);
+  docCount.textContent = `${allDocs.length} document${allDocs.length !== 1 ? 's' : ''}`;
+  renderDocList(allDocs);
+}
+
+init();
+</script>
+</body>
+</html>
