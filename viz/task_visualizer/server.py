@@ -29,6 +29,7 @@ from fastapi.responses import HTMLResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from src.task_composer import registry as task_registry  # noqa: E402
+from src.utils.paths import find_img_root  # noqa: E402
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
@@ -60,28 +61,8 @@ _pdf_cache: dict[str, fitz.Document | None] = {}
 
 
 def _find_img_root(rel_folder: str) -> Path | None:
-    search_base = DATA_DIR / rel_folder
-    best: Path | None = None
-    best_count = 0
-
-    if search_base.exists():
-        for d in search_base.rglob("images"):
-            if d.is_dir():
-                count = sum(1 for _ in d.glob("*"))
-                if count > best_count:
-                    best_count = count
-                    best = d
-        if best:
-            return best.parent
-
-    leaf = rel_folder.split("/")[-1]
-    for d in DATA_DIR.rglob("images"):
-        if d.is_dir() and leaf in str(d):
-            count = sum(1 for _ in d.glob("*"))
-            if count > best_count:
-                best_count = count
-                best = d
-    return best.parent if best else None
+    """Resolve a document's image root. See src.utils.paths.find_img_root."""
+    return find_img_root(DATA_DIR, rel_folder)
 
 
 def _find_pdf(rel_folder: str, doc_name: str) -> Path | None:

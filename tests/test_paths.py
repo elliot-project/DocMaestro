@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.utils.paths import doc_rel_dir, output_xml_path
+from src.utils.paths import doc_rel_dir, find_img_root, output_xml_path
 
 
 class TestDocRelDir:
@@ -56,7 +56,69 @@ class TestDocRelDir:
 
 class TestOutputXmlPath:
     def test_joins_output_root_rel_dir_and_backend(self) -> None:
-        path = output_xml_path(
-            Path("/out"), Path("icml/2024/paper"), "paper", "hybrid-auto-engine"
-        )
+        path = output_xml_path(Path("/out"), Path("icml/2024/paper"), "paper", "hybrid-auto-engine")
         assert path == Path("/out/icml/2024/paper/paper_hybrid-auto-engine.xml")
+
+
+def _images_dir(base: Path, n_files: int) -> Path:
+    """Create an ``images/`` dir under *base* holding *n_files* JPEGs."""
+    d = base / "images"
+    d.mkdir(parents=True)
+    for i in range(n_files):
+        (d / f"{i}.jpg").touch()
+    return d
+
+
+class TestFindImgRoot:
+    """XML <img src> values are 'images/<file>', so the resolved root is the
+    PARENT of the images directory."""
+
+    def test_returns_parent_of_images_dir(self, tmp_path: Path) -> None:
+        data = tmp_path / "data"
+        holder = data / "ASML" / "hybrid-auto-engine" / "ASML" / "hybrid_auto"
+        _images_dir(holder, 3)
+        assert find_img_root(data, "ASML") == holder
+
+    def test_src_resolves_against_returned_root(self, tmp_path: Path) -> None:
+        data = tmp_path / "data"
+        holder = data / "doc" / "backend"
+        _images_dir(holder, 1)
+        root = find_img_root(data, "doc")
+        assert (root / "images" / "0.jpg").exists()
+
+    def test_picks_most_populated_images_dir(self, tmp_path: Path) -> None:
+        data = tmp_path / "data"
+        sparse = data / "doc" / "bench_r0"
+        rich = data / "doc" / "full_run"
+        _images_dir(sparse, 1)
+        _images_dir(rich, 9)
+        assert find_img_root(data, "doc") == rich
+
+    def test_returns_none_when_no_images_anywhere(self, tmp_path: Path) -> None:
+        data = tmp_path / "data"
+        (data / "doc").mkdir(parents=True)
+        assert find_img_root(data, "doc") is None
+
+    def test_returns_none_when_data_dir_missing(self, tmp_path: Path) -> None:
+        assert find_img_root(tmp_path / "nope", "doc") is None
+
+    def test_falls_back_to_leaf_name_search(self, tmp_path: Path) -> None:
+        """The XML may sit at output/a/b/doc while data/ nests it elsewhere."""
+        data = tmp_path / "data"
+        holder = data / "elsewhere" / "doc" / "backend"
+        _images_dir(holder, 2)
+        assert find_img_root(data, "unrelated/doc") == holder
+
+    def test_nested_rel_folder_resolves_directly(self, tmp_path: Path) -> None:
+        data = tmp_path / "data"
+        holder = data / "conf" / "2024" / "paper" / "backend"
+        _images_dir(holder, 2)
+        assert find_img_root(data, "conf/2024/paper") == holder
+
+    def test_direct_hit_wins_over_unrelated_doc(self, tmp_path: Path) -> None:
+        data = tmp_path / "data"
+        mine = data / "doc_a" / "backend"
+        other = data / "doc_b" / "backend"
+        _images_dir(mine, 2)
+        _images_dir(other, 50)
+        assert find_img_root(data, "doc_a") == mine

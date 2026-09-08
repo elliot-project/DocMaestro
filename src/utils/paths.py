@@ -1,8 +1,9 @@
-"""Output path derivation for the extraction pipeline.
+"""Path derivation for the extraction pipeline.
 
 Single source of truth for mapping a source PDF to its place in the output
-tree. Centralising this avoids the copy-paste drift that previously let one
-call site flatten the hierarchy while another preserved it.
+tree, and for finding the extracted images that belong to a document.
+Centralising this avoids the copy-paste drift that previously let one call
+site flatten the hierarchy while another preserved it.
 """
 
 from __future__ import annotations
@@ -55,3 +56,69 @@ def output_xml_path(output_dir: Path, rel_dir: Path, doc_name: str, backend: str
         ``output_dir / rel_dir / f"{doc_name}_{backend}.xml"``.
     """
     return output_dir / rel_dir / f"{doc_name}_{backend}.xml"
+
+
+def find_img_root(data_dir: Path, rel_folder: str) -> Path | None:
+    """Locate the directory a document's ``<img src>`` values resolve against.
+
+    Synthesized XML stores image references as ``images/<hash>.jpg``, but the
+    files themselves live under ``data/``, not next to the XML in ``output/``.
+    The two trees do not mirror each other: MinerU nests its own run folders
+    below the document (``data/ASML/hybrid-auto-engine/ASML/hybrid_auto/images``),
+    and re-runs leave several ``images/`` directories behind. So the directory
+    is searched for rather than computed, and the most populated candidate wins
+    — a partial benchmark run leaves a thin ``images/`` that should lose to the
+    full extraction.
+
+    The document folder is tried first; only if that misses does the search
+    widen to the whole of ``data_dir`` matching on the folder's leaf name,
+    which covers documents whose output path does not match their data path.
+
+    Args:
+        data_dir: Root of the raw-output tree (typically ``data/``).
+        rel_folder: The document's folder path relative to the output root,
+            e.g. ``"ASML"`` or ``"conf/2024/paper"``.
+
+    Returns:
+        The parent of the chosen ``images/`` directory, so that
+        ``root / "images" / name`` resolves — or ``None`` when the document has
+        no extracted images.
+    """
+    if not data_dir.exists():
+        return None
+
+    direct = _most_populated_images_dir(data_dir / rel_folder)
+    if direct is not None:
+        return direct.parent
+
+    leaf = rel_folder.rstrip("/").split("/")[-1]
+    widened = _most_populated_images_dir(data_dir, name_filter=leaf)
+    return widened.parent if widened is not None else None
+
+
+def _most_populated_images_dir(base: Path, name_filter: str | None = None) -> Path | None:
+    """Return the ``images/`` directory under *base* holding the most files.
+
+    Args:
+        base: Directory to search recursively. A missing path yields ``None``.
+        name_filter: When given, only consider directories whose path contains
+            this substring.
+
+    Returns:
+        The winning ``images/`` directory, or ``None`` if there is no candidate.
+    """
+    if not base.exists():
+        return None
+
+    best: Path | None = None
+    best_count = -1
+    for candidate in base.rglob("images"):
+        if not candidate.is_dir():
+            continue
+        if name_filter is not None and name_filter not in str(candidate):
+            continue
+        count = sum(1 for _ in candidate.iterdir())
+        if count > best_count:
+            best_count = count
+            best = candidate
+    return best
