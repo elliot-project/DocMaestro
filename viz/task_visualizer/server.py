@@ -29,7 +29,7 @@ from fastapi.responses import HTMLResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from src.task_composer import registry as task_registry  # noqa: E402
-from src.utils.paths import find_img_root  # noqa: E402
+from src.utils.paths import build_pdf_index, find_img_root  # noqa: E402
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
@@ -38,6 +38,13 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--output-dir", default=str(ROOT / "output"))
     p.add_argument("--data-dir", default=str(ROOT / "data"))
+    p.add_argument(
+        "--pdf-dir",
+        default=None,
+        help="Root of the source PDFs, for page renders. Defaults to --data-dir; "
+        "point it at the original dataset when extraction wrote its output "
+        "somewhere other than alongside the PDFs.",
+    )
     p.add_argument("--port", type=int, default=8767)
     p.add_argument("--host", default="0.0.0.0")
     p.add_argument("--render-dpi", type=int, default=144)
@@ -47,6 +54,7 @@ def _parse_args() -> argparse.Namespace:
 ARGS = _parse_args()
 OUTPUT_DIR = Path(ARGS.output_dir)
 DATA_DIR = Path(ARGS.data_dir)
+PDF_DIR = Path(ARGS.pdf_dir) if ARGS.pdf_dir else DATA_DIR
 RENDER_DPI = ARGS.render_dpi
 _SEED = 42
 
@@ -56,6 +64,7 @@ _registry: dict[str, dict] | None = None
 _xml_cache: dict[str, ET.Element] = {}
 _sample_cache: dict[str, list[dict]] = {}
 _pdf_cache: dict[str, fitz.Document | None] = {}
+_pdf_index: dict[str, Path] | None = None
 
 # ── Discovery helpers ──────────────────────────────────────────────────────────
 
@@ -65,20 +74,29 @@ def _find_img_root(rel_folder: str) -> Path | None:
     return find_img_root(DATA_DIR, rel_folder)
 
 
+def _get_pdf_index() -> dict[str, Path]:
+    """Return the stem→path PDF index, building it on first use."""
+    global _pdf_index
+    if _pdf_index is None:
+        _pdf_index = build_pdf_index(PDF_DIR)
+    return _pdf_index
+
+
 def _find_pdf(rel_folder: str, doc_name: str) -> Path | None:
+    """Locate the source PDF for a document.
+
+    The conventional locations are tried first; only if they miss does the
+    lookup fall back to a corpus-wide index, which is built once rather than
+    re-walking the tree for every document.
+    """
     for candidate in [
-        DATA_DIR / "pdfs" / f"{doc_name}.pdf",
-        DATA_DIR / rel_folder / f"{doc_name}.pdf",
+        PDF_DIR / "pdfs" / f"{doc_name}.pdf",
+        PDF_DIR / rel_folder / f"{doc_name}.pdf",
+        PDF_DIR / rel_folder / f"{doc_name}" / f"{doc_name}.pdf",
     ]:
         if candidate.exists():
             return candidate
-    search_root = DATA_DIR / rel_folder
-    if search_root.exists():
-        for p in search_root.rglob(f"{doc_name}.pdf"):
-            return p
-    for p in DATA_DIR.rglob(f"{doc_name}.pdf"):
-        return p
-    return None
+    return _get_pdf_index().get(doc_name)
 
 
 def _doc_id(xml_path: Path) -> str:
@@ -537,6 +555,7 @@ if __name__ == "__main__":
     docs = get_registry()
     print(f"Output dir : {OUTPUT_DIR}")
     print(f"Data dir   : {DATA_DIR}")
+    print(f"PDF dir    : {PDF_DIR}")
     print(f"Documents  : {len(docs)} found")
     print(f"Tasks      : {len(task_registry.REGISTRY)} registered")
     for did, m in sorted(docs.items(), key=lambda x: x[1]["doc_name"]):

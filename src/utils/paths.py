@@ -122,3 +122,29 @@ def _most_populated_images_dir(base: Path, name_filter: str | None = None) -> Pa
             best_count = count
             best = candidate
     return best
+
+
+def build_pdf_index(root: Path) -> dict[str, Path]:
+    """Index every PDF under *root* by filename stem, in one directory walk.
+
+    Callers that need to resolve many document names to PDFs (the task
+    visualizer resolves one per discovered XML) would otherwise walk the tree
+    once per lookup, which is quadratic in the corpus size. Building the map
+    once turns that into a single walk plus dictionary lookups.
+
+    Stems are not guaranteed unique — the same paper title can appear under two
+    venues — so the sorted-first path wins, making the result deterministic
+    rather than filesystem-order dependent.
+
+    Args:
+        root: Directory to walk. A missing path yields an empty index.
+
+    Returns:
+        Mapping of PDF stem to its path.
+    """
+    if not root.exists():
+        return {}
+    index: dict[str, Path] = {}
+    for pdf in sorted(root.rglob("*.pdf")):
+        index.setdefault(pdf.stem, pdf)
+    return index

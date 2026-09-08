@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.utils.paths import doc_rel_dir, find_img_root, output_xml_path
+from src.utils.paths import build_pdf_index, doc_rel_dir, find_img_root, output_xml_path
 
 
 class TestDocRelDir:
@@ -122,3 +122,32 @@ class TestFindImgRoot:
         _images_dir(mine, 2)
         _images_dir(other, 50)
         assert find_img_root(data, "doc_a") == mine
+
+
+class TestBuildPdfIndex:
+    def _pdf(self, path: Path) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"%PDF-1.4\n")
+        return path
+
+    def test_maps_stem_to_path(self, tmp_path: Path) -> None:
+        a = self._pdf(tmp_path / "CVPR" / "2020" / "a.pdf")
+        b = self._pdf(tmp_path / "nips" / "2024" / "b.pdf")
+        assert build_pdf_index(tmp_path) == {"a": a, "b": b}
+
+    def test_missing_root_returns_empty(self, tmp_path: Path) -> None:
+        assert build_pdf_index(tmp_path / "nope") == {}
+
+    def test_empty_root_returns_empty(self, tmp_path: Path) -> None:
+        assert build_pdf_index(tmp_path) == {}
+
+    def test_duplicate_stems_resolve_deterministically(self, tmp_path: Path) -> None:
+        """Two venues can hold the same title; the sorted-first path wins."""
+        first = self._pdf(tmp_path / "CVPR" / "dup.pdf")
+        self._pdf(tmp_path / "nips" / "dup.pdf")
+        assert build_pdf_index(tmp_path)["dup"] == first
+
+    def test_ignores_non_pdf_files(self, tmp_path: Path) -> None:
+        self._pdf(tmp_path / "a.pdf")
+        (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
+        assert set(build_pdf_index(tmp_path)) == {"a"}
