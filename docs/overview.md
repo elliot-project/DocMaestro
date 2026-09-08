@@ -1,8 +1,8 @@
 # Overview
 
-## What Is OmniDocParser?
+## What Is DocMaestro?
 
-OmniDocParser is a research-grade document intelligence pipeline built on top of
+DocMaestro is a research-grade document intelligence pipeline built on top of
 **MinerU2.5-Pro** (a 1.2B-parameter Vision-Language Model). It ingests PDF documents and
 produces three primary artifacts:
 
@@ -58,7 +58,7 @@ CUDA_VISIBLE_DEVICES=6 uv run main.py --pdf data/pdfs/macdonals.pdf
 
 ```bash
 git clone <repo>
-cd OmniDocParser
+cd DocMaestro
 uv sync          # installs all dependencies from pyproject.toml + uv.lock
 ```
 

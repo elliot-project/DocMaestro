@@ -201,7 +201,7 @@ def main() -> None:
     pending_pdfs = [p for p, did in zip(all_pdfs, all_ids) if did in pending_ids]
     tasks = [str(p.resolve()) for p in pending_pdfs]
 
-    console.rule("[bold blue]OmniDocParser — Multi-GPU Dispatch[/bold blue]")
+    console.rule("[bold blue]DocMaestro — Multi-GPU Dispatch[/bold blue]")
     console.print(f"  Total PDFs found:   [bold]{len(all_pdfs)}[/bold]")
     console.print(f"  Already processed:  [yellow]{len(all_pdfs) - len(tasks)}[/yellow]")
     console.print(f"  Remaining to do:    [bold green]{len(tasks)}[/bold green]")

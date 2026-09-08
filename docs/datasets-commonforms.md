@@ -7,7 +7,7 @@ a **second dataset** alongside the conference-papers dataset. It is a form-field
 detection dataset: roughly 55,000 documents / 450,000+ pages, with each HuggingFace
 row holding **one page image** plus ground-truth form-field annotations.
 
-OmniDocParser ingests it without touching the extraction core. A preparation step
+DocMaestro ingests it without touching the extraction core. A preparation step
 converts the per-page rows into **per-document multi-page PDFs**, and the existing
 multi-GPU pipeline (`scripts/run_sharded.py`) then processes those PDFs exactly
 like any other PDF source. The ground-truth annotations are written to an additive

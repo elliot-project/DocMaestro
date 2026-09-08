@@ -1,4 +1,4 @@
-# OmniDocParser Documentation
+# DocMaestro Documentation
 
 **MinerU2.5-Pro document extraction, XML synthesis, and benchmarking pipeline.**
 

@@ -2,7 +2,7 @@
 """DocTask 11: form filling (key-value information extraction from forms).
 
 Unlike the other composers, the ground truth here does not come from
-OmniDocParser XML. It is pulled from the pre-processed CommonForms partition's
+DocMaestro XML. It is pulled from the pre-processed CommonForms partition's
 field sidecar (built by ``src/datasets/commonforms.py::build_fields_sidecar``).
 """
 

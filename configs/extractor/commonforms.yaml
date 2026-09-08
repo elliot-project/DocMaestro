@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────
-# OmniDocParser — CommonForms Config
+# DocMaestro — CommonForms Config
 # ─────────────────────────────────────────────
 # Inputs are the per-document PDFs materialized by
 # scripts/prepare_commonforms.py from the CommonForms validation split.

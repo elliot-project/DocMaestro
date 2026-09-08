@@ -2,7 +2,7 @@
 
 ## Overview
 
-`src/extractor.py` is the single interface between OmniDocParser and MinerU. It exposes two
+`src/extractor.py` is the single interface between DocMaestro and MinerU. It exposes two
 public functions — `extract()` and `batch_extract()` — that wrap MinerU's `do_parse()` Python
 API, read the resulting JSON files from disk, and return structured `ExtractionResult` objects.
 

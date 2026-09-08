@@ -3,7 +3,7 @@
 ## Directory Layout
 
 ```
-OmniDocParser/
+DocMaestro/
 │
 ├── CLAUDE.md                       ← Project instructions for AI assistant
 ├── main.py                         ← Primary orchestrator: PDF → extraction → XML → WandB

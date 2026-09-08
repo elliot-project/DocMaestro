@@ -1,4 +1,4 @@
-"""OmniDocParser — full pipeline orchestrator.
+"""DocMaestro — full pipeline orchestrator.
 
 Runs MinerU extraction, XML synthesis, and optional post-processing stages
 (title-aided hierarchy detection, SigLIP2 figure classification) for one PDF
@@ -258,7 +258,7 @@ def parse_args() -> argparse.Namespace:
         input_root, and retry_failed fields.
     """
     parser = argparse.ArgumentParser(
-        description="OmniDocParser: full MinerU → XML → enrichment pipeline."
+        description="DocMaestro: full MinerU → XML → enrichment pipeline."
     )
     parser.add_argument(
         "--pdf", type=Path, required=True, help="PDF file or directory of PDFs to process."
@@ -432,7 +432,7 @@ def main() -> None:
     total_found = len(all_pdfs)
     skipped = total_found - len(pdfs)
 
-    console.rule("[bold blue]OmniDocParser[/bold blue]")
+    console.rule("[bold blue]DocMaestro[/bold blue]")
     console.print(f"  Total PDFs found:   [bold]{total_found}[/bold]")
     if skipped:
         console.print(f"  Already processed:  [yellow]{skipped} (skipped)[/yellow]")
