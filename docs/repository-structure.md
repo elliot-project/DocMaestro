@@ -96,10 +96,11 @@ OmniDocParser/
 │       ├── *_gpu_util.png
 │       └── *_scale_projection.png
 │
-└── lib/                            ← Vendored JS libraries (legacy, from PyVis era)
-    ├── bindings/
-    └── tom-select/
+└── drafts/                         ← Local exploration scripts (gitignored, never imported)
 ```
+
+> `lib/` may exist locally — vendored JS left over from the PyVis era. It is
+> untracked and unused; nothing in the pipeline references it.
 
 ---
 
