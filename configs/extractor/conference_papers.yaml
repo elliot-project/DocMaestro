@@ -20,6 +20,11 @@ paths:
   # Resume/retry manifest (JSONL) lives here, on the persistent data volume and
   # separate from the output tree, so restarts skip already-done documents.
   state_dir: /data/151-1/users/mserrao/conference-papers-state
+  # tools/ is the scraper's own source tree; tools/raw holds re-downloaded
+  # duplicates of papers already filed under CVPR/ICCV/nips/WACV. Processing it
+  # would double-extract ~4.9k documents into a venue-less output path.
+  exclude:
+    - tools
 
 title_aided:
   enabled: false

@@ -162,6 +162,9 @@ def parse_args() -> argparse.Namespace:
                         help="Comma-separated physical GPU indices, e.g. '0,1,2,3'.")
     parser.add_argument("--pdf", type=Path, required=True,
                         help="PDF file or directory of PDFs to process.")
+    parser.add_argument("--exclude", action="append", default=None, metavar="PATTERN",
+                        help="Skip PDFs whose path under --pdf matches PATTERN (repeatable). "
+                             "Overrides paths.exclude from the config when given.")
     parser.add_argument("--config", type=Path, default=_DEFAULT_CONFIG,
                         help=f"YAML config file passed to each worker. Default: {_DEFAULT_CONFIG}")
     parser.add_argument("--batch-size", type=int, default=None, metavar="N",
@@ -188,7 +191,8 @@ def main() -> None:
     config = load_config(args.config)
     ext = config.extraction
 
-    all_pdfs = collect_pdfs(args.pdf)
+    exclude = args.exclude if args.exclude is not None else config.paths.exclude
+    all_pdfs = collect_pdfs(args.pdf, exclude=exclude)
 
     def doc_id(pdf: Path) -> str:
         return doc_rel_dir(pdf, args.pdf).as_posix()

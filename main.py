@@ -264,6 +264,14 @@ def parse_args() -> argparse.Namespace:
         "--pdf", type=Path, required=True, help="PDF file or directory of PDFs to process."
     )
     parser.add_argument(
+        "--exclude",
+        action="append",
+        default=None,
+        metavar="PATTERN",
+        help="Skip PDFs whose path under --pdf matches PATTERN (repeatable). "
+        "Overrides paths.exclude from the config when given.",
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=_DEFAULT_CONFIG,
@@ -419,7 +427,8 @@ def main() -> None:
 
     console = Console()
 
-    all_pdfs = collect_pdfs(args.pdf)
+    exclude = args.exclude if args.exclude is not None else config.paths.exclude
+    all_pdfs = collect_pdfs(args.pdf, exclude=exclude)
 
     # ── Resume logic via the manifest: skip 'done', optionally retry 'failed' ──
     run_id = compute_run_id(args.pdf, ext.backend, config.paths.output_dir)

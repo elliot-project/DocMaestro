@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from fnmatch import fnmatch
 from pathlib import Path
 
 import yaml
@@ -64,6 +65,7 @@ class PathsConfig:
     data_dir: Path = field(default_factory=lambda: Path("data"))
     output_dir: Path = field(default_factory=lambda: Path("output"))
     state_dir: Path = field(default_factory=lambda: Path("state"))
+    exclude: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -109,6 +111,7 @@ def load_config(config_path: Path) -> PipelineConfig:
         data_dir=Path(paths_raw.get("data_dir", "data")),
         output_dir=Path(paths_raw.get("output_dir", "output")),
         state_dir=Path(paths_raw.get("state_dir", "state")),
+        exclude=list(paths_raw.get("exclude", []) or []),
     )
 
     return PipelineConfig(
@@ -153,21 +156,53 @@ def chunked(lst: list, n: int) -> list[list]:
     return [lst[i : i + n] for i in range(0, len(lst), n)]
 
 
-def collect_pdfs(input_path: Path) -> list[Path]:
+def collect_pdfs(input_path: Path, exclude: list[str] | None = None) -> list[Path]:
     """Collect PDF paths from a single file or a directory.
 
     Args:
         input_path: Path to a PDF file or a directory containing PDFs.
+        exclude: Patterns matched against each PDF's path *relative to*
+            ``input_path``, in posix form. A pattern is a match when it
+            fnmatch-matches the whole relative path (``"*/raw/*"``) or names a
+            directory prefix of it (``"tools"``, ``"tools/raw"``). Matching
+            files are dropped. Ignored when ``input_path`` is a single file,
+            since naming a PDF explicitly is an unambiguous request for it.
 
     Returns:
         Sorted list of PDF paths.
 
     Raises:
-        ValueError: If no PDF files are found.
+        ValueError: If no PDF files are found, or all of them were excluded.
     """
     if input_path.is_file():
         return [input_path]
     pdfs = sorted(input_path.rglob("*.pdf"))
     if not pdfs:
         raise ValueError(f"No PDF files found in {input_path}")
+    if exclude:
+        pdfs = [p for p in pdfs if not _is_excluded(p.relative_to(input_path), exclude)]
+        if not pdfs:
+            raise ValueError(f"All PDF files in {input_path} were excluded by {exclude}")
     return pdfs
+
+
+def _is_excluded(rel: Path, patterns: list[str]) -> bool:
+    """Return whether a relative PDF path matches any exclude pattern.
+
+    Args:
+        rel: PDF path relative to the input root.
+        patterns: Exclude patterns; see :func:`collect_pdfs`.
+
+    Returns:
+        ``True`` when the path should be dropped.
+    """
+    rel_posix = rel.as_posix()
+    for pattern in patterns:
+        pattern = pattern.strip().rstrip("/")
+        if not pattern:
+            continue
+        if fnmatch(rel_posix, pattern):
+            return True
+        if rel_posix.startswith(f"{pattern}/"):
+            return True
+    return False
