@@ -33,7 +33,14 @@ OmniDocParser/
 │   ├── classify_figures.py         ← Standalone figure enrichment (SigLIP2)
 │   ├── run_docvqa2026.py           ← DocVQA-2026 dataset sweep
 │   ├── run_sharded.py              ← Multi-GPU launcher (shards PDF list)
+│   ├── run_doctasks.py             ← Run every registered SSL composer over output/
+│   ├── prepare_commonforms.py      ← Materialize CommonForms rows into per-doc PDFs
 │   └── visualize.py                ← Standalone visualization
+│
+├── viz/                            ← Interactive inspection tools (served, not batch)
+│   └── task_visualizer/
+│       ├── server.py               ← FastAPI backend: runs composers on demand
+│       └── index.html              ← Frontend: one renderer per view_type
 │
 ├── tests/                          ← pytest unit tests
 │   ├── __init__.py

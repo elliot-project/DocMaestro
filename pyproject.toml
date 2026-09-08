@@ -16,6 +16,8 @@ dependencies = [
     "datasets>=4.8.5",
     "pymupdf>=1.27.2.3",
     "rich>=15.0.0",
+    "fastapi>=0.136.1",
+    "uvicorn>=0.46.0",
 ]
 
 [tool.ruff]

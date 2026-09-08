@@ -3236,6 +3236,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "datasets" },
+    { name = "fastapi" },
     { name = "matplotlib" },
     { name = "mineru", extra = ["all"] },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -3246,6 +3247,7 @@ dependencies = [
     { name = "rich" },
     { name = "ruff" },
     { name = "transformers" },
+    { name = "uvicorn" },
     { name = "vllm" },
     { name = "wandb" },
 ]
@@ -3253,6 +3255,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "datasets", specifier = ">=4.8.5" },
+    { name = "fastapi", specifier = ">=0.136.1" },
     { name = "matplotlib", specifier = ">=3.9.0" },
     { name = "mineru", extras = ["all"], specifier = ">=3.1.0" },
     { name = "networkx", specifier = ">=3.4.2" },
@@ -3262,6 +3265,7 @@ requires-dist = [
     { name = "rich", specifier = ">=15.0.0" },
     { name = "ruff", specifier = ">=0.15.12" },
     { name = "transformers", specifier = ">=4.57.6" },
+    { name = "uvicorn", specifier = ">=0.46.0" },
     { name = "vllm", specifier = ">=0.11.0" },
     { name = "wandb", specifier = ">=0.26.0" },
 ]

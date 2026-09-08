@@ -5,8 +5,8 @@ using the central registry, and serves figure images and optional page renders
 for the frontend.
 
 Usage:
-    uv run drafts/task_visualizer/server.py
-    uv run drafts/task_visualizer/server.py --port 8767
+    uv run viz/task_visualizer/server.py
+    uv run viz/task_visualizer/server.py --port 8767
 """
 
 from __future__ import annotations
