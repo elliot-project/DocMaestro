@@ -22,7 +22,7 @@ import tempfile
 from pathlib import Path
 
 # Ensure the project root is importable when run as a script.
-from doc_maestro.datasets.commonforms import (
+from doc_maestro.sources.commonforms import (
     build_fields_sidecar,
     build_pdf,
     group_pages,

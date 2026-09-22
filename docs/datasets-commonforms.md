@@ -164,7 +164,7 @@ little headroom (see [extraction.md](extraction.md) and the GPU-budget notes).
 
 | Path | Role |
 |------|------|
-| `src/doc_maestro/datasets/commonforms.py` | Pure logic: `parse_file_name`, `group_pages`, `coco_to_xyxy`, `build_fields_sidecar`, `build_pdf`, `CATEGORY_NAMES` |
+| `src/doc_maestro/sources/commonforms.py` | Pure logic: `parse_file_name`, `group_pages`, `coco_to_xyxy`, `build_fields_sidecar`, `build_pdf`, `CATEGORY_NAMES` |
 | `scripts/prepare_commonforms.py` | CLI: download + materialize PDFs and sidecars |
 | `configs/extractor/commonforms.yaml` | Extraction config (backend, paths, GPU budget) |
 | `tests/test_commonforms.py` | Unit tests for the pure logic |

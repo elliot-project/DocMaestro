@@ -6,7 +6,7 @@ import io
 
 import pytest
 
-from doc_maestro.datasets.commonforms import (
+from doc_maestro.sources.commonforms import (
     CATEGORY_NAMES,
     build_fields_sidecar,
     build_pdf,

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from doc_maestro.dataset.contract import (
+from doc_maestro.task_composer import registry
+from doc_maestro.training.contract import (
     CONTRACTS,
     AssetPolicy,
     TargetFormat,
     geometric_augmentation_allowed,
     get_contract,
 )
-from doc_maestro.task_composer import registry
 
 
 class TestCoverage:
