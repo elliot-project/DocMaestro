@@ -7,8 +7,8 @@ import warnings
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from src.task_composer import registry
-from src.task_composer.base import Sample
+from doc_maestro.task_composer import registry
+from doc_maestro.task_composer.base import Sample
 
 
 def _doc() -> ET.Element:
@@ -18,9 +18,7 @@ def _doc() -> ET.Element:
         ET.SubElement(page, "title", {"bbox": "[0, 0, 600, 30]", "level": "1"}).text = f"H{pi}"
         for j in range(4):
             y2 = j * 40 + 30
-            tb = ET.SubElement(
-                page, "text-block", {"bbox": f"[0, {j * 40}, 600, {y2}]"}
-            )
+            tb = ET.SubElement(page, "text-block", {"bbox": f"[0, {j * 40}, 600, {y2}]"})
             tb.text = f"para {pi}-{j}"
         fig = ET.SubElement(page, "figure", {"bbox": "[0, 200, 300, 400]"})
         ET.SubElement(fig, "img", {"src": f"images/p{pi}.jpg"})

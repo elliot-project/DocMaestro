@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 import xml.etree.ElementTree as ET
 
-from src.task_composer import xml_ops
+from doc_maestro.task_composer import xml_ops
 
 
 def _page() -> ET.Element:

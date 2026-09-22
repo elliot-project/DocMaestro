@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.utils.paths import build_pdf_index, doc_rel_dir, find_img_root, output_xml_path
+from doc_maestro.utils.paths import build_pdf_index, doc_rel_dir, find_img_root, output_xml_path
 
 
 class TestDocRelDir:

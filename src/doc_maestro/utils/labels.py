@@ -28,7 +28,7 @@ LABEL_REGISTRY: dict[str, list[str]] = {
         "A highly magnified microscopy image or colorful histology slide showing cellular structures and tissues.",
         "A diagnostic biomedical scan, like an ultrasound, displaying organic internal anatomy in black and white.",
         "A specialized scientific scan from laboratory equipment, such as a textured electron microscope image.",
-        "A false-color satellite rendering or deep space astronomical photograph captured by non-optical sensors."
+        "A false-color satellite rendering or deep space astronomical photograph captured by non-optical sensors.",
     ],
     "illustration-artwork": [
         "A cropped image from a document showing a digital illustration.",
@@ -56,14 +56,14 @@ LABEL_REGISTRY: dict[str, list[str]] = {
         "A standalone graphic symbol or brand mark entirely surrounded by empty space.",
         "A cropped document image consisting solely of a corporate logo on a solid, blank background.",
         "An isolated icon, institutional seal, or emblem with no surrounding scenery or context.",
-        "A single vectorized corporate trademark isolated on a blank canvas."
+        "A single vectorized corporate trademark isolated on a blank canvas.",
     ],
     "map": [
         "A geographic map displaying landmasses, oceans, and country borders.",
         "A street map for navigation showing roads, highways, and city blocks.",
         "A cartographic topographic map illustrating geographical terrain and elevation.",
         "A political map from an atlas highlighting countries, states, and geographic locations.",
-        "An architectural floor plan or building blueprint showing rooms, walls, and building layouts."
+        "An architectural floor plan or building blueprint showing rooms, walls, and building layouts.",
     ],
     "signature-handwriting": [
         "A cropped image from a document showing a handwritten signature.",
@@ -71,5 +71,5 @@ LABEL_REGISTRY: dict[str, list[str]] = {
         "A signature signed in pen on a document.",
         "A close-up of ink strokes forming handwritten words or initials.",
         "A manual handwritten annotation or sign-off.",
-    ]
+    ],
 }

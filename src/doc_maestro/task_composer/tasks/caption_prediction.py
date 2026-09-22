@@ -6,7 +6,7 @@ import warnings
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from src.task_composer.base import BaseTaskComposer, DocumentContext, Sample
+from doc_maestro.task_composer.base import BaseTaskComposer, DocumentContext, Sample
 
 _CAPTIONABLE_TAGS = {"figure", "chart", "table"}
 _SKIP_CONTEXT_TAGS = {"page-header", "page-footer", "page-number", "abandon"}
@@ -74,7 +74,7 @@ class CaptionPredictionComposer(BaseTaskComposer):
             after = [e for i, (_, e) in enumerate(sibling_positions) if i > sib_pos]
 
             preceding = before[-3:][::-1]  # up to 3, closest-first
-            following = after[:3]          # up to 3, closest-first
+            following = after[:3]  # up to 3, closest-first
 
             key = f"{context.doc_name}_p{page_idx:03d}_caption_pred_{sample_idx}"
 

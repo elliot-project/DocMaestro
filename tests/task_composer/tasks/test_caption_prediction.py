@@ -8,13 +8,13 @@ from pathlib import Path
 
 from PIL import Image
 
-from src.task_composer.base import DocumentContext
-from src.task_composer.tasks.caption_prediction import CaptionPredictionComposer
+from doc_maestro.task_composer.base import DocumentContext
+from doc_maestro.task_composer.tasks.caption_prediction import CaptionPredictionComposer
 
 
 def _make_page(idx: int = 0, elements: list[ET.Element] | None = None) -> ET.Element:
     page = ET.Element("page", {"idx": str(idx), "width": "600", "height": "800"})
-    for el in (elements or []):
+    for el in elements or []:
         page.append(el)
     return page
 
@@ -109,11 +109,13 @@ class TestSampleStructure:
         assert len(samples) == 1
 
     def test_three_captionable_types_all_produce_samples(self, tmp_path):
-        page = _make_page(elements=[
-            _figure_with_caption("Fig 1"),
-            _chart_with_caption("Chart 2"),
-            _table_with_caption("Table 3"),
-        ])
+        page = _make_page(
+            elements=[
+                _figure_with_caption("Fig 1"),
+                _chart_with_caption("Chart 2"),
+                _table_with_caption("Table 3"),
+            ]
+        )
         ctx = _make_context([page], tmp_path)
         samples = CaptionPredictionComposer().compose_page(page, ctx)
         assert len(samples) == 3
@@ -169,10 +171,10 @@ class TestContextWindow:
     def test_following_up_to_3_elements_closest_first(self, tmp_path):
         elements = [
             _figure_with_caption("cap"),  # idx 0
-            _text_block("A"),             # idx 1
-            _text_block("B"),             # idx 2
-            _text_block("C"),             # idx 3
-            _text_block("D"),             # idx 4
+            _text_block("A"),  # idx 1
+            _text_block("B"),  # idx 2
+            _text_block("C"),  # idx 3
+            _text_block("D"),  # idx 4
         ]
         page = _make_page(elements=elements)
         ctx = _make_context([page], tmp_path)

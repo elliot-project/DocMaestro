@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.utils.config import collect_pdfs, load_config
+from doc_maestro.utils.config import collect_pdfs, load_config
 
 
 def _make_tree(root: Path) -> None:

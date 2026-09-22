@@ -6,8 +6,8 @@ import json
 import tarfile
 from pathlib import Path
 
-from src.task_composer.base import Sample
-from src.task_composer.shard_writer import ShardBuffer, ShardWriter
+from doc_maestro.task_composer.base import Sample
+from doc_maestro.task_composer.shard_writer import ShardBuffer, ShardWriter
 
 
 def _make_sample(key: str, text: str = "hello") -> Sample:

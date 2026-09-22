@@ -30,7 +30,7 @@ Parsed XML
 
 ## Architecture
 
-### Core Abstractions (`src/task_composer/base.py`)
+### Core Abstractions (`src/doc_maestro/task_composer/base.py`)
 
 #### `Sample`
 
@@ -105,7 +105,7 @@ Override `compose_document` only if your task requires coordination across pages
 
 ---
 
-### Shard Writer (`src/task_composer/shard_writer.py`)
+### Shard Writer (`src/doc_maestro/task_composer/shard_writer.py`)
 
 Writes samples into WebDataset-compatible `.tar` archives. Fully decoupled from task logic — accepts any `list[Sample]` regardless of origin.
 
@@ -154,7 +154,7 @@ The `__key__` entry is **never** written to disk — it's metadata only.
 
 **Task:** Given a figure/chart/table image and its surrounding page context, predict the caption.
 
-**Source:** `src/task_composer/tasks/caption_prediction.py`
+**Source:** `src/doc_maestro/task_composer/tasks/caption_prediction.py`
 
 **Eligible elements:** `<figure>`, `<chart>`, `<table>` — only those with a non-empty `<caption>` child.
 
@@ -197,7 +197,7 @@ If the `<img>` element has an empty `src` attribute, the image is silently skipp
 
 **Task:** Given the text of a page, identify which figure belongs to it from a set of candidates.
 
-**Source:** `src/task_composer/tasks/figure_selection.py`
+**Source:** `src/doc_maestro/task_composer/tasks/figure_selection.py`
 
 **Constructor args:**
 - `n_distractors: int = 2` — number of distractor figures per sample
@@ -237,7 +237,7 @@ If the `<img>` element has an empty `src` attribute, the image is silently skipp
 
 **Task:** Given a shuffled subset of page elements, recover the original document reading order.
 
-**Source:** `src/task_composer/tasks/reading_order.py`
+**Source:** `src/doc_maestro/task_composer/tasks/reading_order.py`
 
 **Constructor args:**
 - `n_elements: int = 5` — elements to sample per page
@@ -291,7 +291,7 @@ restored = [shuffled[1], shuffled[3], shuffled[0], shuffled[4], shuffled[2]]
 ```python
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from src.task_composer import CaptionPredictionComposer, ShardWriter
+from doc_maestro.task_composer import CaptionPredictionComposer, ShardWriter
 
 root = ET.parse("output/adidas/adidas.xml").getroot()
 img_root = Path("output/adidas/images")
@@ -308,7 +308,7 @@ print(f"Wrote {len(samples)} samples to {len(shard_paths)} shards")
 ### All three tasks
 
 ```python
-from src.task_composer import (
+from doc_maestro.task_composer import (
     CaptionPredictionComposer,
     FigureSelectionComposer,
     ReadingOrderComposer,
@@ -336,7 +336,7 @@ for composer in composers:
 Subclass `BaseTaskComposer`, declare `task_name`, implement `compose_page`:
 
 ```python
-from src.task_composer.base import BaseTaskComposer, DocumentContext, Sample
+from doc_maestro.task_composer.base import BaseTaskComposer, DocumentContext, Sample
 import xml.etree.ElementTree as ET
 
 class TitleExtractionComposer(BaseTaskComposer):
@@ -366,7 +366,7 @@ Override `compose_document` only if you need a cross-page index built before pag
 ## File Layout
 
 ```
-src/task_composer/
+src/doc_maestro/task_composer/
 ├── __init__.py                      # public exports
 ├── base.py                          # Sample, DocumentContext, BaseTaskComposer
 ├── shard_writer.py                  # ShardWriter

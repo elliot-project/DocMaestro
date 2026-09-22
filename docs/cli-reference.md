@@ -247,7 +247,7 @@ attributes:
 </figure>
 ```
 
-Categories come from `LABEL_REGISTRY` in `src/utils/labels.py`.
+Categories come from `LABEL_REGISTRY` in `src/doc_maestro/utils/labels.py`.
 
 ### Examples
 

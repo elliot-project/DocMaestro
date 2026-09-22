@@ -8,8 +8,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
-from src.task_composer.base import BaseTaskComposer, DocumentContext, Sample
-from src.task_composer.xml_ops import page_idx
+from doc_maestro.task_composer.base import BaseTaskComposer, DocumentContext, Sample
+from doc_maestro.task_composer.xml_ops import page_idx
 
 
 class PageSortingComposer(BaseTaskComposer):
@@ -51,9 +51,7 @@ class PageSortingComposer(BaseTaskComposer):
             {
                 "orig_page_idx": page_idx(p),
                 "page_number_bboxes": [
-                    e.attrib["bbox"]
-                    for e in p
-                    if e.tag == "page-number" and "bbox" in e.attrib
+                    e.attrib["bbox"] for e in p if e.tag == "page-number" and "bbox" in e.attrib
                 ],
             }
             for p in pages

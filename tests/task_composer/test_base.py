@@ -7,12 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from src.task_composer.base import BaseTaskComposer, DocumentContext, Sample
+from doc_maestro.task_composer.base import BaseTaskComposer, DocumentContext, Sample
 
 
 class TestSample:
     def test_valid_sample_construction(self):
-        s = Sample(key="doc_p001_task_0", payload={"__key__": "doc_p001_task_0", "target.txt": "hello"})
+        s = Sample(
+            key="doc_p001_task_0", payload={"__key__": "doc_p001_task_0", "target.txt": "hello"}
+        )
         assert s.key == "doc_p001_task_0"
         assert s.payload["target.txt"] == "hello"
 
@@ -56,7 +58,9 @@ class _ConcreteComposer(BaseTaskComposer):
 
 class TestBaseTaskComposer:
     def _make_root(self, n_pages: int = 3) -> ET.Element:
-        root = ET.Element("document", {"name": "testdoc", "page_count": str(n_pages), "backend": "hybrid"})
+        root = ET.Element(
+            "document", {"name": "testdoc", "page_count": str(n_pages), "backend": "hybrid"}
+        )
         for i in range(n_pages):
             ET.SubElement(root, "page", {"idx": str(i), "width": "600", "height": "800"})
         return root

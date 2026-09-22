@@ -154,7 +154,9 @@ def _make_patched_request_title_levels(original_fn):
                 except (ValueError, SyntaxError):
                     pass
 
-            raise ValueError(f"Could not parse int-keyed dict from LLM content (len={len(content)})")
+            raise ValueError(
+                f"Could not parse int-keyed dict from LLM content (len={len(content)})"
+            )
 
         _jr.loads = _robust_loads
         try:
@@ -443,15 +445,17 @@ def batch_extract(
                 raise RuntimeError(f"content_list.json not found under {doc_out}.")
             middle_json: dict = json.loads(middle_path.read_text(encoding="utf-8"))
             content_list: list[dict] = json.loads(content_list_path.read_text(encoding="utf-8"))
-            results.append(ExtractionResult(
-                content_list=content_list,
-                middle_json=middle_json,
-                backend=backend,
-                pdf_path=pdf_path.resolve(),
-                duration_seconds=duration,
-                page_count=len(middle_json.get("pdf_info", [])),
-                output_dir=doc_out,
-            ))
+            results.append(
+                ExtractionResult(
+                    content_list=content_list,
+                    middle_json=middle_json,
+                    backend=backend,
+                    pdf_path=pdf_path.resolve(),
+                    duration_seconds=duration,
+                    page_count=len(middle_json.get("pdf_info", [])),
+                    output_dir=doc_out,
+                )
+            )
         except Exception as exc:
             results.append(exc)
 

@@ -10,9 +10,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from src.visualizer import generate_all_visualizations  # noqa: E402
+from doc_maestro.visualizer import generate_all_visualizations
 
 
 def load_content_list(data_dir: Path, doc_name: str) -> list[dict]:

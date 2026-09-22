@@ -6,8 +6,8 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from src.task_composer.base import BaseTaskComposer, DocumentContext, Sample
-from src.task_composer.xml_ops import page_idx, text_blocks_with_bbox
+from doc_maestro.task_composer.base import BaseTaskComposer, DocumentContext, Sample
+from doc_maestro.task_composer.xml_ops import page_idx, text_blocks_with_bbox
 
 
 class OcrComposer(BaseTaskComposer):

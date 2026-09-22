@@ -2,7 +2,7 @@
 
 Scans ``output/`` for ``*_*.xml`` files (one per document), parses each with
 xml.etree.ElementTree, runs every composer registered in
-``src.task_composer.registry``, and writes the collected samples as a single
+``doc_maestro.task_composer.registry``, and writes the collected samples as a single
 ``<doc_name>_doctasks.json`` file next to the source XML.
 
 With ``--shard-dir`` it also writes WebDataset ``.tar`` shards. Samples are
@@ -26,12 +26,10 @@ import warnings
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from src.task_composer import registry  # noqa: E402
-from src.task_composer.base import Sample  # noqa: E402
-from src.task_composer.shard_writer import ShardBuffer  # noqa: E402
-from src.utils.paths import find_img_root  # noqa: E402
+from doc_maestro.task_composer import registry
+from doc_maestro.task_composer.base import Sample
+from doc_maestro.task_composer.shard_writer import ShardBuffer
+from doc_maestro.utils.paths import find_img_root
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

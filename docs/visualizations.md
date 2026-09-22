@@ -2,7 +2,7 @@
 
 ## Overview
 
-`src/visualizer.py` produces four types of visual output from a document's `content_list.json`
+`src/doc_maestro/visualizer.py` produces four types of visual output from a document's `content_list.json`
 and its source PDF. All outputs are saved under `output/<doc_name>/plots/` (per-document) or
 `output/plots/` (global benchmark plots).
 
@@ -173,12 +173,12 @@ content_list → build_doc_tree() → _build_networkx_graph() → _nx_to_d3_json
 
 ## Using `generate_all_visualizations()`
 
-The convenience function `generate_all_visualizations()` in `src/visualizer.py` calls all four
+The convenience function `generate_all_visualizations()` in `src/doc_maestro/visualizer.py` calls all four
 render functions in sequence. It's the primary entry point used by both `scripts/visualize.py`
 and `scripts/run_extraction.py`.
 
 ```python
-from src.visualizer import generate_all_visualizations
+from doc_maestro.visualizer import generate_all_visualizations
 
 saved_paths = generate_all_visualizations(
     pdf_path=Path("data/pdfs/macdonals.pdf"),

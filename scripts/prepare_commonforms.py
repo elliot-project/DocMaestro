@@ -18,14 +18,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 import tempfile
 from pathlib import Path
 
 # Ensure the project root is importable when run as a script.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from src.datasets.commonforms import (  # noqa: E402
+from doc_maestro.datasets.commonforms import (
     build_fields_sidecar,
     build_pdf,
     group_pages,

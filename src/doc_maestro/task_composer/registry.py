@@ -11,20 +11,20 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from src.task_composer.base import BaseTaskComposer
-from src.task_composer.tasks.basic_reading import BasicReadingComposer
-from src.task_composer.tasks.caption_prediction import CaptionPredictionComposer
-from src.task_composer.tasks.doc_reconstruction import DocReconstructionComposer
-from src.task_composer.tasks.dom_edition import DomEditionComposer
-from src.task_composer.tasks.figure_ordering import FigureOrderingComposer
-from src.task_composer.tasks.figure_selection import FigureSelectionComposer
-from src.task_composer.tasks.form_filling import FormFillingComposer
-from src.task_composer.tasks.layout import LayoutComposer
-from src.task_composer.tasks.markdown import MarkdownComposer
-from src.task_composer.tasks.ocr import OcrComposer
-from src.task_composer.tasks.page_sorting import PageSortingComposer
-from src.task_composer.tasks.page_tree import PageTreeComposer
-from src.task_composer.tasks.reading_order import ReadingOrderComposer
+from doc_maestro.task_composer.base import BaseTaskComposer
+from doc_maestro.task_composer.tasks.basic_reading import BasicReadingComposer
+from doc_maestro.task_composer.tasks.caption_prediction import CaptionPredictionComposer
+from doc_maestro.task_composer.tasks.doc_reconstruction import DocReconstructionComposer
+from doc_maestro.task_composer.tasks.dom_edition import DomEditionComposer
+from doc_maestro.task_composer.tasks.figure_ordering import FigureOrderingComposer
+from doc_maestro.task_composer.tasks.figure_selection import FigureSelectionComposer
+from doc_maestro.task_composer.tasks.form_filling import FormFillingComposer
+from doc_maestro.task_composer.tasks.layout import LayoutComposer
+from doc_maestro.task_composer.tasks.markdown import MarkdownComposer
+from doc_maestro.task_composer.tasks.ocr import OcrComposer
+from doc_maestro.task_composer.tasks.page_sorting import PageSortingComposer
+from doc_maestro.task_composer.tasks.page_tree import PageTreeComposer
+from doc_maestro.task_composer.tasks.reading_order import ReadingOrderComposer
 
 
 @dataclass(frozen=True)

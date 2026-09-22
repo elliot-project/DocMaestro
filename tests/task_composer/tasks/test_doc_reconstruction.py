@@ -6,8 +6,8 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from src.task_composer.base import DocumentContext
-from src.task_composer.tasks.doc_reconstruction import DocReconstructionComposer
+from doc_maestro.task_composer.base import DocumentContext
+from doc_maestro.task_composer.tasks.doc_reconstruction import DocReconstructionComposer
 
 
 def _page(n: int = 3) -> ET.Element:

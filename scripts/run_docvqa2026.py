@@ -40,7 +40,6 @@ import argparse
 import io
 import json
 import os
-import sys
 import time
 from pathlib import Path
 
@@ -48,12 +47,9 @@ from datasets import concatenate_datasets, load_dataset
 from PIL import Image
 
 import wandb
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from src.extractor import SUPPORTED_BACKENDS, ExtractionResult, batch_extract  # noqa: E402
-from src.utils.config import chunked  # noqa: E402
-from src.xml_formatter import build_document_xml, save_document_xml  # noqa: E402
+from doc_maestro.extractor import SUPPORTED_BACKENDS, ExtractionResult, batch_extract
+from doc_maestro.utils.config import chunked
+from doc_maestro.xml_formatter import build_document_xml, save_document_xml
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -62,7 +58,9 @@ _OUTPUT_ROOT = Path("output/docvqa2026")
 _DATASET_ID = "VLR-CVC/DocVQA-2026"
 _SPLITS = ["val", "test"]
 
-Image.MAX_IMAGE_PIXELS = None  # Disable PIL decompression bomb protection (DocVQA-2026 has some very large pages)
+Image.MAX_IMAGE_PIXELS = (
+    None  # Disable PIL decompression bomb protection (DocVQA-2026 has some very large pages)
+)
 # ── Image → PDF conversion ────────────────────────────────────────────────────
 
 
@@ -211,8 +209,8 @@ def parse_args() -> argparse.Namespace:
         default=4,
         metavar="N",
         help="Documents per do_parse call (default 4). Higher values fill the "
-             "GPU page window from more documents simultaneously. Increase "
-             "--window-size if batch_size × avg_pages > 64.",
+        "GPU page window from more documents simultaneously. Increase "
+        "--window-size if batch_size × avg_pages > 64.",
     )
     parser.add_argument(
         "--window-size",
@@ -220,7 +218,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="N",
         help="MinerU processing window in pages (MINERU_PROCESSING_WINDOW_SIZE). "
-             "Default is 64. Set larger when batch_size × avg_pages exceeds 64.",
+        "Default is 64. Set larger when batch_size × avg_pages exceeds 64.",
     )
     parser.add_argument(
         "--gpu-memory-utilization",
@@ -228,7 +226,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="F",
         help="vLLM KV-cache fraction (e.g. 0.85). Only affects VLM/hybrid "
-             "backends — no-op for pipeline.",
+        "backends — no-op for pipeline.",
     )
     parser.add_argument(
         "--server-url",
@@ -255,8 +253,6 @@ def parse_args() -> argparse.Namespace:
         help="Disable WandB logging.",
     )
     return parser.parse_args()
-
-
 
 
 def main() -> None:
@@ -331,7 +327,8 @@ def main() -> None:
     for chunk in chunked(records, args.batch_size):
         # Apply resume filter: skip docs whose XML already exists
         pending = [
-            r for r in chunk
+            r
+            for r in chunk
             if not resume
             or not (_OUTPUT_ROOT / r["doc_id"] / f"{r['doc_id']}_{args.backend}.xml").exists()
         ]
@@ -339,7 +336,9 @@ def main() -> None:
 
         for r in skipped_in_chunk:
             print(f"  [skip] {r['doc_id']} — XML already exists")
-            results.append({"doc_id": r["doc_id"], "status": "skipped", "pages": 0, "duration_s": 0.0})
+            results.append(
+                {"doc_id": r["doc_id"], "status": "skipped", "pages": 0, "duration_s": 0.0}
+            )
             global_idx += 1
 
         if not pending:
@@ -347,8 +346,10 @@ def main() -> None:
 
         chunk_pdfs = [pdf_paths[r["doc_id"]] for r in pending]
         doc_ids_str = ", ".join(r["doc_id"] for r in pending)
-        print(f"\n[{global_idx + 1}–{global_idx + len(pending)}/{len(records)}] "
-              f"batch_extract: {doc_ids_str}")
+        print(
+            f"\n[{global_idx + 1}–{global_idx + len(pending)}/{len(records)}] "
+            f"batch_extract: {doc_ids_str}"
+        )
 
         chunk_results = batch_extract(
             pdf_paths=chunk_pdfs,
@@ -370,7 +371,11 @@ def main() -> None:
                     "error": str(extraction),
                 }
             else:
-                pps = max(extraction.page_count, 1) / extraction.duration_seconds if extraction.duration_seconds > 0 else 0
+                pps = (
+                    max(extraction.page_count, 1) / extraction.duration_seconds
+                    if extraction.duration_seconds > 0
+                    else 0
+                )
                 print(f"  [ok]    {doc_id}: {extraction.page_count}p, {pps:.2f} pages/sec")
                 outcome = _finalize_document(record, extraction, args.backend)
 
@@ -443,14 +448,16 @@ def main() -> None:
     print(f"\n  Summary saved: {summary_path}")
 
     if not args.no_wandb:
-        wandb.log({
-            "docvqa/sweep/total_docs": len(results),
-            "docvqa/sweep/ok": len(ok),
-            "docvqa/sweep/skipped": len(skipped),
-            "docvqa/sweep/errors": len(errors),
-            "docvqa/sweep/total_pages": total_pages,
-            "docvqa/sweep/wall_clock_s": sweep_duration,
-        })
+        wandb.log(
+            {
+                "docvqa/sweep/total_docs": len(results),
+                "docvqa/sweep/ok": len(ok),
+                "docvqa/sweep/skipped": len(skipped),
+                "docvqa/sweep/errors": len(errors),
+                "docvqa/sweep/total_pages": total_pages,
+                "docvqa/sweep/wall_clock_s": sweep_duration,
+            }
+        )
         wandb.finish()
 
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 
-from src.pipeline.protocol import encode_status
+from doc_maestro.pipeline.protocol import encode_status
 
 
 def worker_loop(

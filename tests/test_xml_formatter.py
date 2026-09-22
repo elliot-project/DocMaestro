@@ -2,7 +2,7 @@
 
 import xml.etree.ElementTree as ET
 
-from src.xml_formatter import build_document_xml
+from doc_maestro.xml_formatter import build_document_xml
 
 MINIMAL_MIDDLE_JSON = {
     "_backend": "pipeline",

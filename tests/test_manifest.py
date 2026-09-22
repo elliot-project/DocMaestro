@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.utils.manifest import Manifest, compute_run_id, manifest_path
+from doc_maestro.utils.manifest import Manifest, compute_run_id, manifest_path
 
 
 class TestManifest:

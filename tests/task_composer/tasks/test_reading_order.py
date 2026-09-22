@@ -5,14 +5,14 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from src.task_composer.base import DocumentContext
-from src.task_composer.tasks.reading_order import ReadingOrderComposer
+from doc_maestro.task_composer.base import DocumentContext
+from doc_maestro.task_composer.tasks.reading_order import ReadingOrderComposer
 
 
 def _make_page(idx: int = 0, n_text_blocks: int = 5) -> ET.Element:
     page = ET.Element("page", {"idx": str(idx), "width": "600", "height": "800"})
     for i in range(n_text_blocks):
-        tb = ET.SubElement(page, "text-block", {"bbox": f"[0,{i*30},{600},{(i+1)*30}]"})
+        tb = ET.SubElement(page, "text-block", {"bbox": f"[0,{i * 30},{600},{(i + 1) * 30}]"})
         tb.text = f"paragraph {i}"
     return page
 

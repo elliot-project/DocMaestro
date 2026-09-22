@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
-from src.task_composer.base import BaseTaskComposer, DocumentContext, Sample
+from doc_maestro.task_composer.base import BaseTaskComposer, DocumentContext, Sample
 
 
 class FormFillingComposer(BaseTaskComposer):
@@ -51,8 +51,7 @@ class FormFillingComposer(BaseTaskComposer):
         samples: list[Sample] = []
         for page in sidecar.get("pages", []):
             fields = [
-                {"category": f["category"], "bbox": f["bbox"]}
-                for f in page.get("fields", [])
+                {"category": f["category"], "bbox": f["bbox"]} for f in page.get("fields", [])
             ]
             if not fields:
                 continue

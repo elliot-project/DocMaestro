@@ -45,7 +45,7 @@ def decode_status(line: str) -> dict | None:
     line = line.strip()
     if not line.startswith(PREFIX):
         return None
-    body = line[len(PREFIX):].strip()
+    body = line[len(PREFIX) :].strip()
     try:
         decoded = json.loads(body)
     except json.JSONDecodeError:

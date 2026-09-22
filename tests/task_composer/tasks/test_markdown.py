@@ -6,8 +6,8 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from src.task_composer.base import DocumentContext
-from src.task_composer.tasks.markdown import MarkdownComposer
+from doc_maestro.task_composer.base import DocumentContext
+from doc_maestro.task_composer.tasks.markdown import MarkdownComposer
 
 
 def _ctx(pages, tmp_path: Path) -> DocumentContext:

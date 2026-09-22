@@ -6,7 +6,7 @@ import random
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from src.task_composer.base import BaseTaskComposer, DocumentContext, Sample
+from doc_maestro.task_composer.base import BaseTaskComposer, DocumentContext, Sample
 
 _SKIP_TAGS = {"page-header", "page-footer", "page-number", "abandon"}
 
@@ -55,9 +55,7 @@ class ReadingOrderComposer(BaseTaskComposer):
         page_idx = int(page.attrib["idx"])
 
         eligible = [
-            (orig_idx, elem)
-            for orig_idx, elem in enumerate(page)
-            if elem.tag not in _SKIP_TAGS
+            (orig_idx, elem) for orig_idx, elem in enumerate(page) if elem.tag not in _SKIP_TAGS
         ]
 
         if len(eligible) < self.n_elements:

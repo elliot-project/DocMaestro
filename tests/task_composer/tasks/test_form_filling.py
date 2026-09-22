@@ -7,7 +7,7 @@ import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from src.task_composer.tasks.form_filling import FormFillingComposer
+from doc_maestro.task_composer.tasks.form_filling import FormFillingComposer
 
 
 def _write_sidecar(root: Path, doc_name: str) -> None:

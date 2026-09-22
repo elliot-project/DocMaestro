@@ -1038,7 +1038,7 @@ wheels = [
 [[package]]
 name = "doc-maestro"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "datasets" },
     { name = "fastapi" },
@@ -1048,13 +1048,17 @@ dependencies = [
     { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "nvitop" },
     { name = "pymupdf" },
-    { name = "pytest" },
     { name = "rich" },
-    { name = "ruff" },
     { name = "transformers" },
     { name = "uvicorn" },
     { name = "vllm" },
     { name = "wandb" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -1066,13 +1070,17 @@ requires-dist = [
     { name = "networkx", specifier = ">=3.4.2" },
     { name = "nvitop", specifier = ">=1.7.0" },
     { name = "pymupdf", specifier = ">=1.27.2.3" },
-    { name = "pytest", specifier = ">=9.0.3" },
     { name = "rich", specifier = ">=15.0.0" },
-    { name = "ruff", specifier = ">=0.15.12" },
     { name = "transformers", specifier = ">=4.57.6" },
     { name = "uvicorn", specifier = ">=0.46.0" },
     { name = "vllm", specifier = ">=0.11.0" },
     { name = "wandb", specifier = ">=0.26.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.0.3" },
+    { name = "ruff", specifier = ">=0.15.12" },
 ]
 
 [[package]]

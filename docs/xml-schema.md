@@ -2,7 +2,7 @@
 
 ## Overview
 
-`src/xml_formatter.py` synthesizes MinerU's JSON outputs into a structured XML document that
+`src/doc_maestro/xml_formatter.py` synthesizes MinerU's JSON outputs into a structured XML document that
 embeds every content element with its type, text, bounding box, and page position. The format
 is designed to be consumed by LLMs, RAG pipelines, and spatial-reasoning systems.
 
@@ -212,7 +212,7 @@ The sanitization is applied to all text content in every element type.
 
 ---
 
-## Implementation: `src/xml_formatter.py`
+## Implementation: `src/doc_maestro/xml_formatter.py`
 
 ### `build_document_xml(content_list, middle_json, doc_name) → str`
 
@@ -238,7 +238,7 @@ directories as needed.
 
 ---
 
-## Implementation: `src/utils/xml_schema.py`
+## Implementation: `src/doc_maestro/utils/xml_schema.py`
 
 ### `resolve_tag(content_type, text_level) → XMLTagConfig`
 

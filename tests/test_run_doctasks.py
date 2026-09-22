@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from src.task_composer.base import Sample
+from doc_maestro.task_composer.base import Sample
 
 _MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run_doctasks.py"
 _spec = importlib.util.spec_from_file_location("run_doctasks", _MODULE_PATH)

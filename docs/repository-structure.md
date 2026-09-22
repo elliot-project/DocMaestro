@@ -15,9 +15,10 @@ DocMaestro/
 │       ├── default.yaml            ← Default extraction config (hybrid-http-client)
 │       └── fast_img_cls.yaml       ← Config tuned for fast figure classification
 │
-├── src/                            ← Core library modules
-│   ├── __init__.py
-│   ├── extractor.py                ← MinerU extraction wrapper (extract, batch_extract)
+├── src/
+│   └── doc_maestro/                ← Installed package (import doc_maestro.*)
+│       ├── __init__.py
+│       ├── extractor.py                ← MinerU extraction wrapper (extract, batch_extract)
 │   ├── xml_formatter.py            ← content_list + middle_json → XML
 │   ├── figure_classifier.py        ← SigLIP2 zero-shot figure classification
 │   ├── visualizer.py               ← All visualization renderers
@@ -112,7 +113,7 @@ DocMaestro/
 |--------|------|---------|
 | `main()` | function | CLI entry point: parses args, loads YAML config, calls `batch_extract` or `extract`, writes XML, logs to WandB |
 
-### `src/extractor.py`
+### `src/doc_maestro/extractor.py`
 
 | Symbol | Type | Purpose |
 |--------|------|---------|
@@ -125,7 +126,7 @@ DocMaestro/
 | `_make_patched_request_title_levels()` | function | Robust JSON parser for LLM dict output |
 | `_validate_title_aided_config()` | function | Input validation for title_aided_config |
 
-### `src/xml_formatter.py`
+### `src/doc_maestro/xml_formatter.py`
 
 | Symbol | Type | Purpose |
 |--------|------|---------|
@@ -139,7 +140,7 @@ DocMaestro/
 | `_build_generic_text_element()` | function | All other text-bearing types |
 | `_clean()` | function | Strip XML-illegal control characters from text |
 
-### `src/utils/xml_schema.py`
+### `src/doc_maestro/utils/xml_schema.py`
 
 | Symbol | Type | Purpose |
 |--------|------|---------|
@@ -148,7 +149,7 @@ DocMaestro/
 | `resolve_tag()` | function | Resolve XML tag for any (type, text_level) pair |
 | `format_bbox()` | function | Format bbox list as `"[x1, y1, x2, y2]"` string |
 
-### `src/figure_classifier.py`
+### `src/doc_maestro/figure_classifier.py`
 
 | Symbol | Type | Purpose |
 |--------|------|---------|
@@ -156,20 +157,20 @@ DocMaestro/
 | `classify_batch()` | method | Accepts list of PIL images + label set → scores dict |
 | `enrich_xml()` | function | Parse XML, run classification on `<figure>` elements, write `category` and `category_confidence` attributes |
 
-### `src/utils/labels.py`
+### `src/doc_maestro/utils/labels.py`
 
 | Symbol | Type | Purpose |
 |--------|------|---------|
 | `LABEL_REGISTRY` | `dict[str, LabelMeta]` | Canonical label names + descriptions used as SigLIP2 prompts |
 
-### `src/utils/config.py`
+### `src/doc_maestro/utils/config.py`
 
 | Symbol | Type | Purpose |
 |--------|------|---------|
 | `PipelineConfig` | dataclass | Holds all extraction parameters parsed from YAML |
 | `load_config()` | function | Read `configs/extractor/*.yaml` → `PipelineConfig` |
 
-### `src/visualizer.py`
+### `src/doc_maestro/visualizer.py`
 
 | Symbol | Type | Purpose |
 |--------|------|---------|
@@ -186,7 +187,7 @@ DocMaestro/
 | `_nx_to_d3_json()` | function | NetworkX DiGraph → nested D3 hierarchy dict |
 | `_write_d3_tree_html()` | function | Inject D3 data into HTML template |
 
-### `src/utils/benchmark.py`
+### `src/doc_maestro/utils/benchmark.py`
 
 | Symbol | Type | Purpose |
 |--------|------|---------|

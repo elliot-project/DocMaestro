@@ -4,7 +4,7 @@
 
 The pipeline integrates two complementary benchmarking layers:
 
-1. **WandB experiment tracking** (`src/benchmark.py`) — logs metrics for every extraction run
+1. **WandB experiment tracking** (`src/doc_maestro/utils/benchmark.py`) — logs metrics for every extraction run
    to the `mineru-xml-pipeline` project. Enables comparing backends, GPUs, and configurations
    across runs in the WandB dashboard.
 
@@ -23,7 +23,7 @@ All runs log to: **`mineru-xml-pipeline`** (WandB project name, hardcoded).
 ### Initialization
 
 ```python
-from src.benchmark import init_run
+from doc_maestro.utils.benchmark import init_run
 
 run = init_run(
     pdf_name="macdonals.pdf",

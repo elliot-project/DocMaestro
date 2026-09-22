@@ -18,7 +18,7 @@ import torch.nn.functional as F
 from PIL import Image, UnidentifiedImageError
 from transformers import AutoModel, AutoProcessor
 
-from src.utils.labels import LABEL_REGISTRY
+from doc_maestro.utils.labels import LABEL_REGISTRY
 
 _DEFAULT_MODEL = "google/siglip2-base-patch16-384"
 _LABELS = list(LABEL_REGISTRY.keys())

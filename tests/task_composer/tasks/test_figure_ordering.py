@@ -6,7 +6,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from src.task_composer.tasks.figure_ordering import FigureOrderingComposer
+from doc_maestro.task_composer.tasks.figure_ordering import FigureOrderingComposer
 
 # Figure src → origin page index, mirroring the layout built by _doc().
 SRC_TO_PAGE = {

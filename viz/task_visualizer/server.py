@@ -13,23 +13,21 @@ from __future__ import annotations
 
 import argparse
 import ast
-import sys
 import warnings
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import fitz
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
+
+from doc_maestro.task_composer import registry as task_registry
+from doc_maestro.utils.paths import build_pdf_index, find_img_root
+
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-
-import fitz  # noqa: E402
-import uvicorn  # noqa: E402
-from fastapi import FastAPI, HTTPException  # noqa: E402
-from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from fastapi.responses import HTMLResponse, Response  # noqa: E402
-from fastapi.staticfiles import StaticFiles  # noqa: E402
-
-from src.task_composer import registry as task_registry  # noqa: E402
-from src.utils.paths import build_pdf_index, find_img_root  # noqa: E402
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
@@ -70,7 +68,7 @@ _pdf_index: dict[str, Path] | None = None
 
 
 def _find_img_root(rel_folder: str) -> Path | None:
-    """Resolve a document's image root. See src.utils.paths.find_img_root."""
+    """Resolve a document's image root. See doc_maestro.utils.paths.find_img_root."""
     return find_img_root(DATA_DIR, rel_folder)
 
 

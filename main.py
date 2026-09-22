@@ -44,28 +44,25 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import wandb
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from src.extractor import ExtractionResult, batch_extract, extract  # noqa: E402
-from src.figure_classifier import FigureClassifier  # noqa: E402
-from src.pipeline.worker import worker_loop  # noqa: E402
-from src.utils.benchmark import (  # noqa: E402
+from doc_maestro.extractor import ExtractionResult, batch_extract, extract
+from doc_maestro.figure_classifier import FigureClassifier
+from doc_maestro.pipeline.worker import worker_loop
+from doc_maestro.utils.benchmark import (
     init_run,
     log_extraction_metrics,
     log_gpu_memory,
     log_xml_stats,
 )
-from src.utils.config import (  # noqa: E402
+from doc_maestro.utils.config import (
     FigureClassificationConfig,
     PipelineConfig,
     chunked,
     collect_pdfs,
     load_config,
 )
-from src.utils.manifest import Manifest, compute_run_id, manifest_path  # noqa: E402
-from src.utils.paths import doc_rel_dir, output_xml_path  # noqa: E402
-from src.xml_formatter import build_document_xml, save_document_xml  # noqa: E402
+from doc_maestro.utils.manifest import Manifest, compute_run_id, manifest_path
+from doc_maestro.utils.paths import doc_rel_dir, output_xml_path
+from doc_maestro.xml_formatter import build_document_xml, save_document_xml
 
 _DEFAULT_CONFIG = Path("configs/extractor/default.yaml")
 
@@ -84,6 +81,7 @@ def _suppress_noisy_logging() -> None:
     # Suppress loguru (MinerU's logger)
     try:
         from loguru import logger as loguru_logger
+
         loguru_logger.remove()  # remove default stderr sink
         # Re-add with WARNING level only so critical errors still surface
         loguru_logger.add(sys.stderr, level="WARNING")
@@ -283,7 +281,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="N",
         help="Documents per do_parse call (pipeline backend only). "
-             "Overrides the value in the config file.",
+        "Overrides the value in the config file.",
     )
     parser.add_argument(
         "--window-size",
@@ -291,7 +289,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="N",
         help="MinerU page-window size (MINERU_PROCESSING_WINDOW_SIZE). "
-             "Overrides the value in the config file.",
+        "Overrides the value in the config file.",
     )
     parser.add_argument(
         "--no-wandb", action="store_true", help="Disable WandB logging for this run."
@@ -300,15 +298,15 @@ def parse_args() -> argparse.Namespace:
         "--worker",
         action="store_true",
         help="Run as a long-lived per-GPU worker: read PDF paths from stdin, "
-             "emit @@OMNIDOC@@ protocol lines on stdout. Used by "
-             "scripts/run_sharded.py; not intended for standalone use.",
+        "emit @@OMNIDOC@@ protocol lines on stdout. Used by "
+        "scripts/run_sharded.py; not intended for standalone use.",
     )
     parser.add_argument(
         "--input-root",
         type=Path,
         default=None,
         help="Original input directory (or single PDF), used by --worker to "
-             "compute each document's output hierarchy via doc_rel_dir().",
+        "compute each document's output hierarchy via doc_rel_dir().",
     )
     parser.add_argument(
         "--retry-failed",
@@ -452,7 +450,9 @@ def main() -> None:
     console.print()
 
     if not pdfs:
-        console.print("[bold green]✓ All documents have been processed. Nothing to do.[/bold green]")
+        console.print(
+            "[bold green]✓ All documents have been processed. Nothing to do.[/bold green]"
+        )
         return
 
     if ext.batch_size > 1 and ext.backend != "pipeline":
@@ -491,9 +491,7 @@ def main() -> None:
         ) as progress:
             if use_batching:
                 # ── Batched pipeline path ─────────────────────────────────────
-                task = progress.add_task(
-                    "[cyan]Extracting (batch)...", total=len(pdfs)
-                )
+                task = progress.add_task("[cyan]Extracting (batch)...", total=len(pdfs))
                 for chunk in chunked(pdfs, ext.batch_size):
                     try:
                         chunk_results = batch_extract(
@@ -507,9 +505,7 @@ def main() -> None:
                         for p in chunk:
                             failed_docs.append((p.stem, str(exc)))
                             manifest.mark_failed(doc_rel_dir(p, args.pdf).as_posix(), str(exc))
-                            progress.console.print(
-                                f"  [red]✗[/red] {p.stem}: {exc}"
-                            )
+                            progress.console.print(f"  [red]✗[/red] {p.stem}: {exc}")
                         progress.advance(task, advance=len(chunk))
                         continue
 
@@ -518,13 +514,14 @@ def main() -> None:
                         if isinstance(result, Exception):
                             failed_docs.append((pdf_path.stem, str(result)))
                             manifest.mark_failed(doc_id, str(result))
-                            progress.console.print(
-                                f"  [red]✗[/red] {pdf_path.stem}: {result}"
-                            )
+                            progress.console.print(f"  [red]✗[/red] {pdf_path.stem}: {result}")
                             wandb.log({"error": str(result), "doc": pdf_path.name})
                         else:
                             _finalize_document(
-                                pdf_path, result, config, args.pdf,
+                                pdf_path,
+                                result,
+                                config,
+                                args.pdf,
                                 console=progress.console,
                             )
                             manifest.mark_done(
@@ -533,9 +530,7 @@ def main() -> None:
                     progress.advance(task, advance=len(chunk))
             else:
                 # ── Per-document path (hybrid / VLM / single-doc pipeline) ───
-                task = progress.add_task(
-                    "[cyan]Extracting...", total=len(pdfs)
-                )
+                task = progress.add_task("[cyan]Extracting...", total=len(pdfs))
                 for i, pdf_path in enumerate(pdfs):
                     doc_name = pdf_path.stem
                     rel_dir = doc_rel_dir(pdf_path, args.pdf)
@@ -559,17 +554,21 @@ def main() -> None:
                     except Exception as exc:
                         failed_docs.append((doc_name, str(exc)))
                         manifest.mark_failed(doc_id, str(exc))
-                        progress.console.print(
-                            f"  [red]✗[/red] {doc_name}: {exc}"
-                        )
+                        progress.console.print(f"  [red]✗[/red] {doc_name}: {exc}")
                         progress.advance(task)
                         continue
 
                     _finalize_document(
-                        pdf_path, result, config, args.pdf,
-                        console=progress.console, step=i,
+                        pdf_path,
+                        result,
+                        config,
+                        args.pdf,
+                        console=progress.console,
+                        step=i,
                     )
-                    manifest.mark_done(doc_id, pages=result.page_count, seconds=result.duration_seconds)
+                    manifest.mark_done(
+                        doc_id, pages=result.page_count, seconds=result.duration_seconds
+                    )
                     progress.advance(task)
 
     finally:

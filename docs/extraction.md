@@ -2,7 +2,7 @@
 
 ## Overview
 
-`src/extractor.py` is the single interface between DocMaestro and MinerU. It exposes two
+`src/doc_maestro/extractor.py` is the single interface between DocMaestro and MinerU. It exposes two
 public functions — `extract()` and `batch_extract()` — that wrap MinerU's `do_parse()` Python
 API, read the resulting JSON files from disk, and return structured `ExtractionResult` objects.
 
@@ -27,7 +27,7 @@ same schema. XML synthesis is backend-agnostic.
 ## The `extract()` Function
 
 ```python
-from src.extractor import extract
+from doc_maestro.extractor import extract
 from pathlib import Path
 
 result = extract(
@@ -79,7 +79,7 @@ pipeline-level batching. This is more efficient than calling `extract()` in a lo
 the `pipeline` backend, because MinerU can schedule pages from multiple documents in one pass.
 
 ```python
-from src.extractor import batch_extract
+from doc_maestro.extractor import batch_extract
 from pathlib import Path
 
 results = batch_extract(

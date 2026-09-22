@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import queue
 
-from src.pipeline.dispatcher import run_dispatch
+from doc_maestro.pipeline.dispatcher import run_dispatch
 
 
 class FakeWorker:

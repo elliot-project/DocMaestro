@@ -6,7 +6,7 @@ import random
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from src.task_composer.base import BaseTaskComposer, DocumentContext, Sample
+from doc_maestro.task_composer.base import BaseTaskComposer, DocumentContext, Sample
 
 
 class FigureSelectionComposer(BaseTaskComposer):
@@ -47,10 +47,7 @@ class FigureSelectionComposer(BaseTaskComposer):
         """
         page_idx = int(page.attrib["idx"])
 
-        page_figures = [
-            e for e in page
-            if e.tag == "figure" and e.find("img") is not None
-        ]
+        page_figures = [e for e in page if e.tag == "figure" and e.find("img") is not None]
         if not page_figures:
             return []
 

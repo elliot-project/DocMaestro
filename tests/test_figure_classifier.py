@@ -11,8 +11,8 @@ import pytest
 import torch
 from PIL import Image
 
-from src.figure_classifier import _DEFAULT_MODEL, FigureClassifier
-from src.utils.labels import LABEL_REGISTRY
+from doc_maestro.figure_classifier import _DEFAULT_MODEL, FigureClassifier
+from doc_maestro.utils.labels import LABEL_REGISTRY
 
 # Mirrors LABEL_REGISTRY. "rasterized-table" was intentionally dropped in 4a465ec:
 # MinerU emits tables as their own <table> element, so a rasterized-table figure
@@ -74,8 +74,8 @@ class TestFallbacks:
     def _make_classifier(self) -> FigureClassifier:
         """Instantiate FigureClassifier with the model loading mocked out."""
         with (
-            patch("src.figure_classifier.AutoProcessor.from_pretrained"),
-            patch("src.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
+            patch("doc_maestro.figure_classifier.AutoProcessor.from_pretrained"),
+            patch("doc_maestro.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
         ):
             mock_model = MagicMock()
             mock_model.get_text_features.return_value = torch.zeros(50, 768)
@@ -157,7 +157,7 @@ class TestFallbacks:
         clf.model.get_image_features.side_effect = torch.cuda.OutOfMemoryError("out of memory")
 
         with (
-            patch("src.figure_classifier.FigureClassifier.__init__", patched_init),
+            patch("doc_maestro.figure_classifier.FigureClassifier.__init__", patched_init),
             warnings.catch_warnings(record=True) as caught,
         ):
             warnings.simplefilter("always")
@@ -178,8 +178,8 @@ class TestBatchChunking:
     def _make_classifier_with_spy(self, batch_size: int) -> FigureClassifier:
         """Return a FigureClassifier whose _run_batch is replaced with a spy."""
         with (
-            patch("src.figure_classifier.AutoProcessor.from_pretrained"),
-            patch("src.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
+            patch("doc_maestro.figure_classifier.AutoProcessor.from_pretrained"),
+            patch("doc_maestro.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
         ):
             mock_model = MagicMock()
             mock_model.get_text_features.return_value = torch.zeros(50, 768)
@@ -227,8 +227,8 @@ class TestBatchChunking:
     def test_text_features_encoded_once(self, tmp_path):
         """get_text_features is called exactly once at init, not per batch."""
         with (
-            patch("src.figure_classifier.AutoProcessor.from_pretrained"),
-            patch("src.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
+            patch("doc_maestro.figure_classifier.AutoProcessor.from_pretrained"),
+            patch("doc_maestro.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
         ):
             mock_model = MagicMock()
             mock_model.get_text_features.return_value = torch.zeros(50, 768)
@@ -251,8 +251,8 @@ class TestClassifyFiguresReturnDict:
         conf: float = 0.9,
     ) -> dict[ET.Element, tuple[str, float | None]]:
         with (
-            patch("src.figure_classifier.AutoProcessor.from_pretrained"),
-            patch("src.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
+            patch("doc_maestro.figure_classifier.AutoProcessor.from_pretrained"),
+            patch("doc_maestro.figure_classifier.AutoModel.from_pretrained") as mock_model_cls,
         ):
             mock_model = MagicMock()
             mock_model.get_text_features.return_value = torch.zeros(50, 768)

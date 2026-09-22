@@ -6,7 +6,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from src.task_composer.tasks.page_sorting import PageSortingComposer
+from doc_maestro.task_composer.tasks.page_sorting import PageSortingComposer
 
 
 def _doc(n_pages: int) -> ET.Element:

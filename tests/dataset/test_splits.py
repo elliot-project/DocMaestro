@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.dataset.splits import SplitRatios, assign_split, split_documents, venue_of
+from doc_maestro.dataset.splits import SplitRatios, assign_split, split_documents, venue_of
 
 
 class TestVenueOf:

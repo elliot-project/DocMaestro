@@ -1,6 +1,6 @@
 """Unit tests for visualizer.py — tree building and color/label helpers."""
 
-from src.visualizer import (
+from doc_maestro.visualizer import (
     CONTENT_TYPE_COLORS,
     _build_networkx_graph,
     _count_leaves,

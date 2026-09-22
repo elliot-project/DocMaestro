@@ -89,7 +89,9 @@ class Manifest:
             os.fsync(fh.fileno())
         self._status[record["doc"]] = record["status"]
 
-    def mark_done(self, doc: str, *, pages: int | None = None, seconds: float | None = None) -> None:
+    def mark_done(
+        self, doc: str, *, pages: int | None = None, seconds: float | None = None
+    ) -> None:
         """Record ``doc`` as successfully processed.
 
         Args:

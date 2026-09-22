@@ -44,14 +44,14 @@
 
 | Module | Location | Responsibility |
 |--------|----------|----------------|
-| `extractor` | `src/extractor.py` | Wraps MinerU's `do_parse()` API; handles all four backends; manages title-aided LLM patching; returns `ExtractionResult` |
-| `xml_formatter` | `src/xml_formatter.py` | Converts `content_list` + `middle_json` → pretty-printed XML string |
-| `xml_schema` | `src/utils/xml_schema.py` | Maps MinerU content types to XML tags; formats bounding boxes |
-| `visualizer` | `src/visualizer.py` | Renders layout-bbox PNGs, reading-order PNGs, document tree PNGs, and interactive D3 DOM HTML files |
-| `benchmark` | `src/utils/benchmark.py` | WandB helpers: `init_run`, `log_extraction_metrics`, `log_gpu_memory`, `log_xml_stats` |
-| `figure_classifier` | `src/figure_classifier.py` | SigLIP2 zero-shot figure classification; enriches `<figure>` XML elements with `category` and `category_confidence` attributes |
-| `labels` | `src/utils/labels.py` | `LABEL_REGISTRY` — canonical label set and metadata for figure classification |
-| `config` | `src/utils/config.py` | `PipelineConfig` dataclasses and YAML loader for `configs/extractor/*.yaml` |
+| `extractor` | `src/doc_maestro/extractor.py` | Wraps MinerU's `do_parse()` API; handles all four backends; manages title-aided LLM patching; returns `ExtractionResult` |
+| `xml_formatter` | `src/doc_maestro/xml_formatter.py` | Converts `content_list` + `middle_json` → pretty-printed XML string |
+| `xml_schema` | `src/doc_maestro/utils/xml_schema.py` | Maps MinerU content types to XML tags; formats bounding boxes |
+| `visualizer` | `src/doc_maestro/visualizer.py` | Renders layout-bbox PNGs, reading-order PNGs, document tree PNGs, and interactive D3 DOM HTML files |
+| `benchmark` | `src/doc_maestro/utils/benchmark.py` | WandB helpers: `init_run`, `log_extraction_metrics`, `log_gpu_memory`, `log_xml_stats` |
+| `figure_classifier` | `src/doc_maestro/figure_classifier.py` | SigLIP2 zero-shot figure classification; enriches `<figure>` XML elements with `category` and `category_confidence` attributes |
+| `labels` | `src/doc_maestro/utils/labels.py` | `LABEL_REGISTRY` — canonical label set and metadata for figure classification |
+| `config` | `src/doc_maestro/utils/config.py` | `PipelineConfig` dataclasses and YAML loader for `configs/extractor/*.yaml` |
 | `main` | `main.py` | Primary orchestrator: PDF/dir → extraction → XML → WandB logging; supports batching and YAML config |
 | `visualize` | `scripts/visualize.py` | CLI for standalone visualization of already-extracted documents |
 | `benchmark_throughput` | `scripts/benchmark_throughput.py` | Throughput benchmark with GPU monitoring and scale-projection plots |
@@ -178,7 +178,7 @@ y_px = (y_normalized / 1000) * image_height_at_scale_s
 ```
 
 The `visualizer` uses this conversion internally when drawing bounding boxes on rendered PDF
-pages (see `_bbox_to_pixels()` in `src/visualizer.py:94`).
+pages (see `_bbox_to_pixels()` in `src/doc_maestro/visualizer.py:94`).
 
 Page dimensions in `middle.json` are in PDF points (72 pts/inch). The visualizer renders at
 `scale=2.0` (≈144 DPI) using `pypdfium2`.
@@ -189,23 +189,23 @@ Page dimensions in `middle.json` are in PDF points (72 pts/inch). The visualizer
 
 ```
 main.py
-  └── src/extractor.py           ← mineru, vllm (heavy deps, lazy imported)
-  └── src/xml_formatter.py
-      └── src/utils/xml_schema.py
-  └── src/utils/benchmark.py     ← wandb
-  └── src/utils/config.py        ← PipelineConfig, YAML loader
+  └── src/doc_maestro/extractor.py           ← mineru, vllm (heavy deps, lazy imported)
+  └── src/doc_maestro/xml_formatter.py
+      └── src/doc_maestro/utils/xml_schema.py
+  └── src/doc_maestro/utils/benchmark.py     ← wandb
+  └── src/doc_maestro/utils/config.py        ← PipelineConfig, YAML loader
 
 scripts/visualize.py
-  └── src/visualizer.py          ← matplotlib, networkx, pypdfium2, d3 (CDN)
+  └── src/doc_maestro/visualizer.py          ← matplotlib, networkx, pypdfium2, d3 (CDN)
 
 scripts/benchmark_throughput.py
-  └── src/extractor.py
-  └── src/utils/benchmark.py
+  └── src/doc_maestro/extractor.py
+  └── src/doc_maestro/utils/benchmark.py
   └── matplotlib
 
 scripts/classify_figures.py
-  └── src/figure_classifier.py   ← transformers (SigLIP2)
-  └── src/utils/labels.py
+  └── src/doc_maestro/figure_classifier.py   ← transformers (SigLIP2)
+  └── src/doc_maestro/utils/labels.py
 
 scripts/run_docvqa2026.py
   └── main.py (subprocess or direct call)
@@ -220,6 +220,6 @@ configs/
 ```
 
 MinerU and vLLM are **lazily imported** inside `extractor.py`. This means importing
-`src.extractor` at the top of a script does not trigger CUDA initialization — only calling
+`doc_maestro.extractor` at the top of a script does not trigger CUDA initialization — only calling
 `extract()` does. This is critical: CUDA must not be initialized before vLLM spawns its engine
 subprocess (doing so forces vLLM into slower spawn mode and can cause OOM failures).

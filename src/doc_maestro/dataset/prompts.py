@@ -22,7 +22,7 @@ from typing import Any
 
 import yaml
 
-DEFAULT_PROMPTS_PATH = Path(__file__).resolve().parents[2] / "configs" / "prompts" / "doctasks.yaml"
+DEFAULT_PROMPTS_PATH = Path(__file__).resolve().parents[3] / "configs" / "prompts" / "doctasks.yaml"
 
 
 @dataclass(frozen=True)

@@ -7,8 +7,8 @@ import random
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from src.task_composer.base import BaseTaskComposer, DocumentContext, Sample
-from src.task_composer.xml_ops import mutate_tree, page_idx, strip_bbox
+from doc_maestro.task_composer.base import BaseTaskComposer, DocumentContext, Sample
+from doc_maestro.task_composer.xml_ops import mutate_tree, page_idx, strip_bbox
 
 
 class DomEditionComposer(BaseTaskComposer):

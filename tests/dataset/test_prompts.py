@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from src.dataset.prompts import DEFAULT_PROMPTS_PATH, PromptRegistry
-from src.task_composer import registry as task_registry
+from doc_maestro.dataset.prompts import DEFAULT_PROMPTS_PATH, PromptRegistry
+from doc_maestro.task_composer import registry as task_registry
 
 
 @pytest.fixture

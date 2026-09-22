@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from src.pipeline.protocol import decode_status, encode_status
-from src.pipeline.worker import worker_loop
+from doc_maestro.pipeline.protocol import decode_status, encode_status
+from doc_maestro.pipeline.worker import worker_loop
 
 
 class TestProtocol:

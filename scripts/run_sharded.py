@@ -54,13 +54,11 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from src.pipeline.dispatcher import run_dispatch  # noqa: E402
-from src.pipeline.protocol import decode_status  # noqa: E402
-from src.utils.config import collect_pdfs, load_config  # noqa: E402
-from src.utils.manifest import Manifest, compute_run_id, manifest_path  # noqa: E402
-from src.utils.paths import doc_rel_dir  # noqa: E402
+from doc_maestro.pipeline.dispatcher import run_dispatch
+from doc_maestro.pipeline.protocol import decode_status
+from doc_maestro.utils.config import collect_pdfs, load_config
+from doc_maestro.utils.manifest import Manifest, compute_run_id, manifest_path
+from doc_maestro.utils.paths import doc_rel_dir
 
 _MAIN = Path(__file__).resolve().parents[1] / "main.py"
 _DEFAULT_CONFIG = Path("configs/extractor/default.yaml")
@@ -72,7 +70,7 @@ _DEFAULT_CONFIG = Path("configs/extractor/default.yaml")
 class SubprocessWorker:
     """Dispatcher-facing handle around a `main.py --worker` subprocess.
 
-    Implements the `src.pipeline.dispatcher.Worker` protocol: `send` writes
+    Implements the `doc_maestro.pipeline.dispatcher.Worker` protocol: `send` writes
     one PDF path line to the subprocess's stdin, `close` closes stdin so the
     worker's `worker_loop` sees EOF and exits cleanly.
 
@@ -158,23 +156,51 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Dispatch PDFs across multiple GPU workers from a shared queue."
     )
-    parser.add_argument("--gpus", required=True, metavar="IDX",
-                        help="Comma-separated physical GPU indices, e.g. '0,1,2,3'.")
-    parser.add_argument("--pdf", type=Path, required=True,
-                        help="PDF file or directory of PDFs to process.")
-    parser.add_argument("--exclude", action="append", default=None, metavar="PATTERN",
-                        help="Skip PDFs whose path under --pdf matches PATTERN (repeatable). "
-                             "Overrides paths.exclude from the config when given.")
-    parser.add_argument("--config", type=Path, default=_DEFAULT_CONFIG,
-                        help=f"YAML config file passed to each worker. Default: {_DEFAULT_CONFIG}")
-    parser.add_argument("--batch-size", type=int, default=None, metavar="N",
-                        help="--batch-size forwarded to each worker (pipeline only).")
-    parser.add_argument("--window-size", type=int, default=None, metavar="N",
-                        help="--window-size forwarded to each worker.")
-    parser.add_argument("--no-wandb", action="store_true",
-                        help="Disable WandB logging for all workers.")
-    parser.add_argument("--retry-failed", action="store_true",
-                        help="Re-queue documents previously marked 'failed' in the manifest.")
+    parser.add_argument(
+        "--gpus",
+        required=True,
+        metavar="IDX",
+        help="Comma-separated physical GPU indices, e.g. '0,1,2,3'.",
+    )
+    parser.add_argument(
+        "--pdf", type=Path, required=True, help="PDF file or directory of PDFs to process."
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=None,
+        metavar="PATTERN",
+        help="Skip PDFs whose path under --pdf matches PATTERN (repeatable). "
+        "Overrides paths.exclude from the config when given.",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=_DEFAULT_CONFIG,
+        help=f"YAML config file passed to each worker. Default: {_DEFAULT_CONFIG}",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        metavar="N",
+        help="--batch-size forwarded to each worker (pipeline only).",
+    )
+    parser.add_argument(
+        "--window-size",
+        type=int,
+        default=None,
+        metavar="N",
+        help="--window-size forwarded to each worker.",
+    )
+    parser.add_argument(
+        "--no-wandb", action="store_true", help="Disable WandB logging for all workers."
+    )
+    parser.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Re-queue documents previously marked 'failed' in the manifest.",
+    )
     return parser.parse_args()
 
 
@@ -213,7 +239,9 @@ def main() -> None:
     console.print()
 
     if not tasks:
-        console.print("[bold green]✓ All documents have been processed. Nothing to do.[/bold green]")
+        console.print(
+            "[bold green]✓ All documents have been processed. Nothing to do.[/bold green]"
+        )
         return
 
     group_id = f"sharded-{int(time.time())}"
@@ -228,11 +256,15 @@ def main() -> None:
 
     for gpu_id in gpu_indices:
         cmd = [
-            sys.executable, str(_MAIN),
+            sys.executable,
+            str(_MAIN),
             "--worker",
-            "--pdf", str(args.pdf),
-            "--input-root", str(args.pdf),
-            "--config", str(args.config),
+            "--pdf",
+            str(args.pdf),
+            "--input-root",
+            str(args.pdf),
+            "--config",
+            str(args.config),
         ]
         if args.batch_size is not None:
             cmd += ["--batch-size", str(args.batch_size)]
@@ -254,9 +286,13 @@ def main() -> None:
         env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
         proc = subprocess.Popen(
-            cmd, env=env,
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, bufsize=1,
+            cmd,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
         )
         procs.append(proc)
         workers.append(SubprocessWorker(gpu_id, proc, task_owner))
@@ -304,7 +340,9 @@ def main() -> None:
             if payload.get("event") == "done":
                 counts["done"] += 1
                 if did is not None:
-                    manifest.mark_done(did, pages=payload.get("pages"), seconds=payload.get("seconds"))
+                    manifest.mark_done(
+                        did, pages=payload.get("pages"), seconds=payload.get("seconds")
+                    )
             else:
                 counts["failed"] += 1
                 error = payload.get("error", "unknown error")

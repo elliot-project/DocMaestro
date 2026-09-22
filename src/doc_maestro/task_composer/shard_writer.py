@@ -8,7 +8,7 @@ import tarfile
 from pathlib import Path
 from typing import Any
 
-from src.task_composer.base import Sample
+from doc_maestro.task_composer.base import Sample
 
 
 class ShardWriter:

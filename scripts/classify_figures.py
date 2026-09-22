@@ -17,10 +17,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import wandb
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from src.figure_classifier import FigureClassifier  # noqa: E402
+from doc_maestro.figure_classifier import FigureClassifier
 
 
 def parse_args() -> argparse.Namespace:

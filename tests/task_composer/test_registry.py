@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-from src.task_composer import registry
-from src.task_composer.base import BaseTaskComposer
+from doc_maestro.task_composer import registry
+from doc_maestro.task_composer.base import BaseTaskComposer
 
 
 def test_existing_tasks_registered():

@@ -5,8 +5,8 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from src.task_composer.base import DocumentContext
-from src.task_composer.tasks.figure_selection import FigureSelectionComposer
+from doc_maestro.task_composer.base import DocumentContext
+from doc_maestro.task_composer.tasks.figure_selection import FigureSelectionComposer
 
 
 def _make_figure(img_src: str = "images/fig.jpg") -> ET.Element:
@@ -21,7 +21,7 @@ def _make_page(idx: int, figures: list[ET.Element] | None = None, text: str = ""
     if text:
         tb = ET.SubElement(page, "text-block", {"bbox": "[0,0,600,20]"})
         tb.text = text
-    for fig in (figures or []):
+    for fig in figures or []:
         page.append(fig)
     return page
 
@@ -108,11 +108,7 @@ class TestSampleStructure:
         samples = composer.compose_page(pages[0], ctx)
         label = samples[0].payload["target.json"]["label"]
         candidates = samples[0].payload["json"]["candidates"]
-        distractor_origins = [
-            c["page_origin"]
-            for i, c in enumerate(candidates)
-            if i != label
-        ]
+        distractor_origins = [c["page_origin"] for i, c in enumerate(candidates) if i != label]
         assert all(o != 0 for o in distractor_origins)
 
     def test_key_format(self, tmp_path):

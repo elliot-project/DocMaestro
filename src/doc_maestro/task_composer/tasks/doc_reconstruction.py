@@ -7,8 +7,8 @@ import random
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from src.task_composer.base import BaseTaskComposer, DocumentContext, Sample
-from src.task_composer.xml_ops import NOISE_TAGS, page_idx
+from doc_maestro.task_composer.base import BaseTaskComposer, DocumentContext, Sample
+from doc_maestro.task_composer.xml_ops import NOISE_TAGS, page_idx
 
 
 class DocReconstructionComposer(BaseTaskComposer):
@@ -31,9 +31,7 @@ class DocReconstructionComposer(BaseTaskComposer):
 
     def compose_page(self, page: ET.Element, context: DocumentContext) -> list[Sample]:
         """Produce one reconstruction sample for the page, or none."""
-        elements = [
-            el for el in page if el.tag not in NOISE_TAGS and "bbox" in el.attrib
-        ]
+        elements = [el for el in page if el.tag not in NOISE_TAGS and "bbox" in el.attrib]
         if len(elements) < 2:
             return []
 
