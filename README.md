@@ -1,8 +1,6 @@
 # DocMaestro
 
-A high-performance document ingestion pipeline built on **MinerU2.5-Pro** (1.2B VLM). Converts PDFs into structured XML with bounding boxes and reading order, supports four extraction backends, and tracks every run — latency, GPU VRAM, XML stats — in **Weights & Biases**.
-
-**Requirements:** Python 3.10–3.13 · CUDA 11.8+ · 24 GB VRAM minimum
+A data generation engine that turns raw documents into self-supervised datasets for document understanding via rich extraction and modular task composition. Built on top of MinerU2.5-Pro, DocMaestro provides an end-to-end modular framework that converts documents into structured annotations and exports training-ready WebDataset shards for distributed training frameworks such as Megatron.
 
 ---
 
@@ -65,3 +63,10 @@ uv run ruff check --fix . && uv run ruff format .
 ```
 
 YAML configs live in `configs/extractor/` (`default.yaml`, `fast_img_cls.yaml`).
+
+
+---
+
+## Acknowledgements
+
+This project builds directly on [MinerU](https://github.com/opendatalab/mineru). We thank the OpenDataLab team for developing and open-sourcing their document extraction toolkit and models.
