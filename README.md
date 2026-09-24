@@ -1,6 +1,6 @@
 # DocMaestro
 
-A modular data orchestrator that turns raw documents into self-supervised datasets for document understanding via rich extraction and task composition. Built on top of MinerU2.5-Pro, DocMaestro manages the end-to-end process from structured annotation extraction to packaging training-ready WebDataset shards for distributed frameworks such as Megatron.
+A modular data orchestrator that turns raw documents into self-supervised datasets for document understanding via rich extraction and task composition. Built on top of MinerU2.5-Pro, DocMaestro manages the end-to-end process from structured annotation extraction to packaging training-ready WebDataset shards for distributed frameworks such as Energon.
 
 ---
 
